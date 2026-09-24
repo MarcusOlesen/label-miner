@@ -1,7 +1,8 @@
 from pathlib import Path
-from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 import difflib
+import io
 import json
 import os
 import queue
@@ -19,12 +20,10 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from urllib.parse import quote
 
-import cv2
-import numpy as np
 import requests
 from requests.adapters import HTTPAdapter
 
-from PIL import ExifTags, Image, ImageOps, ImageTk
+from PIL import Image, ImageOps, ImageTk
 from pillow_heif import register_heif_opener
 
 try:
@@ -131,6 +130,17 @@ def apply_theme(root):
     return sv_ttk_applied
 
 
+def shade_color(hex_color, amount):
+    """A "#rrggbb" color moved `amount` (0-1) towards white on a dark
+    color, or towards black on a light one - for card backgrounds and
+    borders that stand out slightly from the theme's own background."""
+    red, green, blue = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    target = 255 if (red + green + blue) / 3 < 128 else 0
+    return "#" + "".join(
+        f"{round(channel + (target - channel) * amount):02x}" for channel in (red, green, blue)
+    )
+
+
 def accent_button_style():
     """Style name for the app's one 'primary action' button. sv-ttk ships
     an Accent.TButton variant; without sv-ttk installed we fall back to a
@@ -174,9 +184,6 @@ SUPPORTED_EXTENSIONS = {
     ".tiff",
 }
 MAX_IMAGE_SIDE = 2500
-# find_label_box() works on a copy shrunk to this size - plenty to locate a
-# label, and keeps detection at ~30 ms per photo regardless of resolution.
-LABEL_DETECT_SIDE = 800
 SHOP_URL = "https://moebelkompagniet.dk"
 
 # How many images are processed in flight at once (OCR + webshop price
@@ -208,11 +215,9 @@ COPY_COLUMNS = EXCEL_COLUMNS[:-2]
 
 WHITESPACE_RE = re.compile(r"\s+")
 DEFAULT_TITLE_RE = re.compile(r"\bDefault Title\b", flags=re.IGNORECASE)
-NON_WORD_RE = re.compile(r"[^\w\s]", flags=re.UNICODE)
 PIPE_RE = re.compile(r"\s*\|\s*")
-DIAMETER_DIGITS_RE = re.compile(r"(?<!\d)0(\d{3})(?!\d)")
-IMAGE_COMMENT_RE = re.compile(r"<!--\s*image\s*-->", flags=re.IGNORECASE)
-HEADING_RE = re.compile(r"^\s*#+\s*", flags=re.MULTILINE)
+# A diameter as OCR reads it, with a zero instead of Ø: "090", "0120"
+DIAMETER_DIGITS_RE = re.compile(r"(?<![\w/.,])0(\d{2,3})(?!\d)")
 
 # Strips the timestamp/part suffix Google Drive appends when it zips a
 # folder for download, e.g. "9-20260917T102218Z-1-001" -> "9". Only used
@@ -220,22 +225,34 @@ HEADING_RE = re.compile(r"^\s*#+\s*", flags=re.MULTILINE)
 # of inside a named subfolder (see derive_source_folder).
 GOOGLE_DRIVE_ZIP_SUFFIX_RE = re.compile(r"-\d{8}T\d{6}Z-\d+-\d+$")
 
-STRICT_LABEL_RE = re.compile(
-    r"(?P<mk_varenummer>[^,\-]+?)\s*[-,]\s*"
-    r"(?P<varenavn>.+?)\s+OUTLET\s+"
-    r"(?P<mk_ordrenr>.+?)\s+STAND\s*:?\s*"
-    r"(?P<stand>[ABC])",
-    flags=re.IGNORECASE,
+# A label reads, line by line:
+#     <number>, <product name>        (or "<number> - <product name>")
+#     OUTLET
+#     <order number>
+#     STAND: <A/B/C>
+# The number is either an MK item number, possibly marked as one box of
+# several ("101338_1/2"), or a supplier code ("UE 45990201", "LI 600200049",
+# "AY H000017492", "VN 19987-330" - the "-330" belongs to the code, it is
+# not the separator before the name). Supplier codes have 7+ digits or a
+# dash, so stray capitals in front of an MK number (box print read as
+# "OM 103490") aren't mistaken for one.
+LABEL_NUMBER_RE = re.compile(
+    r"(?<![\w#])(?P<number>"
+    r"[A-Z]{2} ?(?:[A-Z]?\d{7,}|\d{4,}-\d+)"
+    r"|\d{5,6}(?:_\d+/\d+)?"
+    r")(?!\d)\s*(?:,|-(?!\d))?"
 )
-VARENAVN_PAIR_RE = re.compile(
-    r"(?P<mk_varenummer>[^,\-]+?)\s*[-,]\s*(?P<varenavn>.+?)\s+OUTLET\b",
-    flags=re.IGNORECASE,
-)
-MK_ORDRENR_STAND_RE = re.compile(
-    r"OUTLET\s+(?P<mk_ordrenr>.+?)\s+STAND\s*:?\s*(?P<stand>[ABC])\b",
-    flags=re.IGNORECASE,
-)
-STAND_ONLY_RE = re.compile(r"STAND\s*:?\s*(?P<stand>[ABC])\b", flags=re.IGNORECASE)
+# "137.017" - a smudge on the label read as a dot inside the order number
+DIGIT_GROUP_DOT_RE = re.compile(r"(?<=\d)\.(?=\d{3}\b)")
+OUTLET_RE = re.compile(r"\bOUTLET\b", flags=re.IGNORECASE)
+STAND_RE = re.compile(r"\bSTAND\b\s*:?\s*(?P<stand>[A-Z]{1,3}\b)?", flags=re.IGNORECASE)
+LABEL_ANCHOR_RE = re.compile(r"\b(?:OUTLET|STAND)\b", flags=re.IGNORECASE)
+VALID_STANDS = {"A", "B", "C"}
+# One box of a product shipped in several: "101338_1/2" / "1/2 Vega ..."
+BOX_PART_SUFFIX_RE = re.compile(r"_(?P<part>\d+/\d+)$")
+BOX_PART_PREFIX_RE = re.compile(r"^(?P<part>\d+/\d+)\s+")
+# A quantity tag at the end of the name: "... Naturflet - 1 stk."
+STK_TAG_RE = re.compile(r"\s*-?\s*\b\d+\s*stk\b\.?\s*$", flags=re.IGNORECASE)
 
 
 def warning_messages(warnings):
@@ -243,29 +260,135 @@ def warning_messages(warnings):
     return [message for _, message in warnings]
 
 
-WARNING_CATEGORY_ORDER = ["missing", "suspicious", "partial", "error", "shop"]
-WARNING_CATEGORY_LABELS = {
-    "missing": "Manglende felter",
-    "suspicious": "Mistænkelige værdier",
-    "partial": "Delvis genkendelse",
-    "error": "Fejl",
-    "shop": "Webshop",
-}
-
-# Shared severity colors, used by both the warnings list in the review
-# window and the status Treeview on the main window, so the same problem
-# reads the same way everywhere in the app.
+# Shared severity colors, used by both the review window and the status
+# Treeview on the main window, so the same problem reads the same way
+# everywhere in the app.
 COLOR_OK = "#3fb950"
 COLOR_WARNING = "#d29922"
 COLOR_ERROR = "#f85149"
 COLOR_MUTED = "#9aa0a6"
-WARNING_CATEGORY_COLORS = {
-    "missing": COLOR_WARNING,
-    "suspicious": COLOR_WARNING,
-    "partial": COLOR_WARNING,
-    "error": COLOR_ERROR,
-    "shop": COLOR_WARNING,
+# The review window's main button - deliberately the only green, filled
+# button in the window, so "approve" can't be confused with anything else
+COLOR_APPROVE = "#238636"
+COLOR_APPROVE_ACTIVE = "#2ea043"
+
+# Warning categories that come from the webshop lookup (see
+# lookup_shop_price) - replaced wholesale whenever the lookup reruns
+SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "variant", "not_found", "shop"}
+MISSING_FIELD_NAMES = {
+    "mk_varenummer": "MK-varenummeret",
+    "varenavn": "varenavnet",
+    "mk_ordrenr": "MK-ordrenummeret",
+    "stand": "standen",
 }
+
+
+def review_question(warnings, part=""):
+    """The one thing the user is asked to do for a label in review, in plain
+    Danish: {"title", "detail", "fields", "others", "color"}. Picked by
+    priority from the record's warnings - "fields" are the entry fields to
+    highlight, "others" the remaining warning messages, shown smaller.
+    Returns None when there is nothing to review."""
+    if not warnings:
+        return None
+    by_category = {}
+    for category, message in warnings:
+        by_category.setdefault(category, []).append(message)
+
+    def others(*handled):
+        return [message for category, message in warnings if category not in handled]
+
+    if "error" in by_category:
+        return {
+            "title": "Billedet kunne ikke læses",
+            "detail": by_category["error"][0]
+            + "\nTryk \"Læs billedet igen\", eller skriv felterne ud fra billedet.",
+            "fields": list(MISSING_FIELD_NAMES),
+            "others": others("error"),
+            "color": COLOR_ERROR,
+        }
+    if "conflict" in by_category:
+        return {
+            "title": "Nummer og navn passer ikke sammen",
+            "detail": by_category["conflict"][0],
+            "fields": ["mk_varenummer", "varenavn"],
+            "others": others("conflict"),
+            "color": COLOR_WARNING,
+        }
+    if "missing" in by_category:
+        missing = [
+            field for field, name in MISSING_FIELD_NAMES.items()
+            if any(name in message for message in by_category["missing"])
+        ]
+        if missing == ["stand"]:
+            title, detail = "Skriv STAND (A, B eller C)", "Standen kunne ikke læses på labelen."
+        else:
+            title = "Nogle felter kunne ikke læses"
+            detail = "Skriv dem ud fra billedet: " + ", ".join(
+                MISSING_FIELD_NAMES[field] for field in missing
+            ) + "."
+        return {
+            "title": title,
+            "detail": detail,
+            "fields": missing,
+            "others": others("missing", "partial"),
+            "color": COLOR_WARNING,
+        }
+    if "suspicious" in by_category:
+        message = by_category["suspicious"][0]
+        field = "stand" if "STAND" in message else "mk_ordrenr"
+        return {
+            "title": "Tjek STAND" if field == "stand" else "Tjek MK-ordrenummeret",
+            "detail": message.rstrip(".") + (". Ret den til A, B eller C." if field == "stand" else "."),
+            "fields": [field],
+            "others": others("suspicious"),
+            "color": COLOR_WARNING,
+        }
+    if "part" in by_category:
+        return {
+            "title": f"Delvis vare (kolli {part})" if part else "Delvis vare",
+            "detail": "Varen er sendt i flere kasser, så den får ingen pris. "
+            "Tjek at nummer og navn er læst rigtigt.",
+            "fields": ["mk_varenummer", "varenavn"],
+            "others": [
+                message for category, message in warnings
+                if category not in ("part", "variant", "by_name")
+            ],
+            "color": COLOR_WARNING,
+        }
+    if "by_name" in by_category:
+        return {
+            "title": "Er det den rigtige vare?",
+            "detail": by_category["by_name"][0],
+            "fields": [],
+            "others": others("by_name"),
+            "color": COLOR_WARNING,
+        }
+    if "variant" in by_category:
+        return {
+            "title": "Vælg den rigtige vare",
+            "detail": "Navn eller farve passer ikke præcist med hjemmesiden. "
+            "Vælg den vare der passer til labelen.",
+            "fields": [],
+            "others": others("variant"),
+            "color": COLOR_WARNING,
+        }
+    if "not_found" in by_category:
+        return {
+            "title": "Varen findes ikke på hjemmesiden",
+            "detail": "Tjek nummer og navn på billedet. Prisen skal skrives manuelt.",
+            "fields": ["price"],
+            "others": others("not_found"),
+            "color": COLOR_WARNING,
+        }
+    category, message = warnings[0]
+    return {
+        "title": "Tjek labelen",
+        "detail": message,
+        "fields": ["price"] if category == "shop" else [],
+        "others": [other for _, other in warnings[1:]],
+        "color": COLOR_WARNING,
+    }
 
 
 def format_duration(seconds):
@@ -279,23 +402,43 @@ def format_duration(seconds):
     return f"{seconds} sek"
 
 
-def normalize_name_for_match(name):
-    if not name:
-        return ""
+def name_tokens(name):
+    """The words used to compare a label's product name with a webshop
+    name: lowercase, punctuation and "|" dropped, × read as x, and without
+    a "- 6 stk." quantity tag or a "1/2 " box-part prefix - those are on the
+    label but never in the shop's name."""
+    name = BOX_PART_PREFIX_RE.sub("", (name or "").strip())
+    name = STK_TAG_RE.sub("", name)
+    name = DEFAULT_TITLE_RE.sub("", name).replace("×", "x")
+    return [token for token in re.split(r"[^\w]+", name.casefold()) if token]
 
-    # Treat × and x as the same
-    name = name.replace("×", "x")
 
-    # Remove "Default Title"
-    name = DEFAULT_TITLE_RE.sub("", name)
+def tokens_match(label_token, shop_token):
+    """Exact match, or a match despite one of two OCR slips:
+    - a "|" read as "1"/"I"/"l" and glued onto the next word
+      ("1200x100" for "| 200x100", "Iopbevaring" for "| opbevaring")
+    - a small misread inside a longer plain word
+    Otherwise numbers, sizes and short words must match exactly: "Bali" is
+    not "Cali", and "140x200" is not "200x300"."""
+    if label_token == shop_token:
+        return True
+    if len(shop_token) >= 3 and label_token[:1] in ("1", "i", "l") and label_token[1:] == shop_token:
+        return True
+    return (
+        len(label_token) >= 5
+        and len(shop_token) >= 5
+        and label_token.isalpha()
+        and shop_token.isalpha()
+        and difflib.SequenceMatcher(None, label_token, shop_token).ratio() >= 0.85
+    )
 
-    # Remove special characters
-    name = NON_WORD_RE.sub("", name)
 
-    # Normalize whitespace
-    name = WHITESPACE_RE.sub(" ", name)
-
-    return name.strip().casefold()
+def token_coverage(tokens, other_tokens):
+    """Share of `tokens` found in `other_tokens` (0.0 - 1.0)."""
+    if not tokens:
+        return 0.0
+    found = sum(1 for token in tokens if any(tokens_match(token, other) for other in other_tokens))
+    return found / len(tokens)
 
 
 def format_shop_price(value):
@@ -313,96 +456,71 @@ def format_shop_price(value):
     return f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " kr"
 
 
-def _fetch_product_data(session, cache, cache_lock, search_values):
-    """Fetch (and cache) the raw product lookup for a set of search values.
+def _shop_get_json(session, url, params=None):
+    response = session.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    response.raise_for_status()
+    return response.json()
 
-    Cached by the exact tuple of search values, since a repeated
-    MK-varenummer/MK-ordrenummer pair (e.g. multiple photos of the same
-    item) should not trigger new network requests. Only successful
-    fetches are cached, so a transient failure doesn't get "stuck" for
-    later images.
 
-    cache_lock guards the dict since multiple images can be looked up
-    concurrently (see OCR_WORKERS) - without it two threads could both
-    miss the cache for the same key and fetch the same product twice.
-    Harmless correctness-wise (dict writes are atomic), just wasted
-    requests, but cheap to avoid.
-    """
-    cache_key = tuple(search_values)
+def search_shop(session, cache, cache_lock, query, limit):
+    """Product handles the webshop's own search suggests for `query`, best
+    first. Cached per (query, limit) - only successful searches, so a
+    transient failure isn't stuck for the rest of the batch.
+
+    cache_lock guards the dict since multiple images are looked up
+    concurrently (see OCR_WORKERS)."""
+    cache_key = ("search", query, limit)
     with cache_lock:
-        cached = cache.get(cache_key)
-    if cached is not None:
-        return cached, None
-
-    products = []
-    last_error = None
-    for search_value in search_values:
-        try:
-            response = session.get(
-                f"{SHOP_URL}/search/suggest.json",
-                params={
-                    "q": search_value,
-                    "resources[type]": "product",
-                    "resources[limit]": 1,
-                },
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=15,
-            )
-            response.raise_for_status()
-            products = response.json().get("resources", {}).get("results", {}).get("products", [])
-        except Exception as error:
-            last_error = error
-            continue
-        if products:
-            break
-
-    if len(products) != 1:
-        if last_error and not products:
-            return None, f"Prissøgning fejlede: {last_error}"
-        return None, "Fandt ikke produkt på hjemmesiden"
-
-    product = products[0]
-    handle = product.get("handle", "")
-    if not handle:
-        return None, "Produktet mangler en hjemmesideadresse"
-
-    try:
-        product_response = session.get(
-            f"{SHOP_URL}/products/{handle}.js",
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=15,
-        )
-        product_response.raise_for_status()
-        product_data = product_response.json()
-    except Exception as error:
-        return None, f"Kunne ikke hente produktdata: {error}"
-
-    product_title = product_data.get("title", product.get("title", "")).strip()
-    product_url = f"{SHOP_URL}/products/{handle}"
-    fetched = (product_title, product_data, product_url)
+        if cache_key in cache:
+            return cache[cache_key]
+    data = _shop_get_json(
+        session,
+        f"{SHOP_URL}/search/suggest.json",
+        {"q": query, "resources[type]": "product", "resources[limit]": limit},
+    )
+    products = data.get("resources", {}).get("results", {}).get("products", [])
+    handles = [product["handle"] for product in products if product.get("handle")]
     with cache_lock:
-        cache[cache_key] = fetched
-    return fetched, None
+        cache[cache_key] = handles
+    return handles
 
 
-def build_variant_candidates(product_title, product_data):
-    """Flatten one fetched product into a list of {name, price,
-    compare_price, id} candidates - one per variant, or a single
-    id-less entry for a variant-less product. Used both for automatic
-    exact matching and for the review window's "pick the right one"
-    suggestion buttons, so the two always agree on what a "candidate"
-    looks like. `id` is a variant id (or None) - see
-    build_variant_url, which turns a matched candidate into a link that
-    deep-links straight to that specific variant on the shop page."""
-    variants = product_data.get("variants", [])
-    if not variants:
-        return [{
-            "name": product_title,
-            "price": format_shop_price(product_data.get("price")),
-            "compare_price": format_shop_price(product_data.get("compare_at_price")),
-            "id": None,
-        }]
+def fetch_shop_product(session, cache, cache_lock, handle):
+    """One webshop product as {title, url, candidates} - a candidate per
+    variant (see build_variant_candidates). Cached per handle."""
+    cache_key = ("product", handle)
+    with cache_lock:
+        if cache_key in cache:
+            return cache[cache_key]
+    product_data = _shop_get_json(session, f"{SHOP_URL}/products/{handle}.js")
+    title = (product_data.get("title") or "").strip()
+    url = f"{SHOP_URL}/products/{handle}"
+    product = {
+        "title": title,
+        "url": url,
+        "candidates": build_variant_candidates(title, url, product_data),
+    }
+    with cache_lock:
+        cache[cache_key] = product
+    return product
 
+
+def shop_image_url(image):
+    """Shopify gives images as "//cdn..." strings or {"src": ...} dicts."""
+    source = image.get("src") if isinstance(image, dict) else image
+    if not source:
+        return ""
+    return f"https:{source}" if source.startswith("//") else source
+
+
+def build_variant_candidates(product_title, product_url, product_data):
+    """Flatten one fetched product into a list of candidates - one per
+    variant, or a single entry for a variant-less product. Used both for
+    automatic matching and for the review window's "pick the right one"
+    choices, so the two always agree on what a candidate looks like.
+    `url` deep-links straight to the variant (see build_variant_url)."""
+    product_image = shop_image_url(product_data.get("featured_image"))
+    variants = product_data.get("variants") or [{}]
     candidates = []
     for variant in variants:
         variant_title = (variant.get("title") or "").strip()
@@ -412,9 +530,13 @@ def build_variant_candidates(product_title, product_data):
             name = f"{product_title} {variant_title}"
         candidates.append({
             "name": name,
-            "price": format_shop_price(variant.get("price")),
-            "compare_price": format_shop_price(variant.get("compare_at_price")),
+            "price": format_shop_price(variant.get("price", product_data.get("price"))),
+            "compare_price": format_shop_price(
+                variant.get("compare_at_price", product_data.get("compare_at_price"))
+            ),
             "id": variant.get("id"),
+            "url": build_variant_url(product_url, variant.get("id")),
+            "image": shop_image_url(variant.get("featured_image")) or product_image,
         })
     return candidates
 
@@ -429,33 +551,61 @@ def build_variant_url(product_url, variant_id):
     return product_url
 
 
-def rank_candidates_by_similarity(candidates, ocr_varenavn, limit=5):
-    """Rank candidates by text similarity to the OCR'd name, capped to
-    `limit` - so a product with a dozen colour/size variants doesn't flood
-    the review window with buttons."""
-    target = normalize_name_for_match(ocr_varenavn)
-    ranked = sorted(
-        candidates,
-        key=lambda candidate: difflib.SequenceMatcher(
-            None, normalize_name_for_match(candidate["name"]), target
-        ).ratio(),
-        reverse=True,
-    )
-    return ranked[:limit]
+def rank_candidates(candidates, label_tokens):
+    """Candidates sorted best first, each as (label_coverage,
+    shop_coverage, candidate): label_coverage = how much of the label's
+    name is in the shop name, shop_coverage = the reverse."""
+    ranked = []
+    for candidate in candidates:
+        shop_tokens = name_tokens(candidate["name"])
+        ranked.append((
+            token_coverage(label_tokens, shop_tokens),
+            token_coverage(shop_tokens, label_tokens),
+            candidate,
+        ))
+    ranked.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+    return ranked
 
 
-def estimate_default_price(candidates):
-    """When no exact variant match was found, suggest the most common price
-    among *this specific product's own* variants as a rough starting
-    point - free (no extra network calls, just counting what was already
-    fetched) but never guessed across products, only within the one the
-    MK-varenummer/MK-ordrenummer search already identified. Returns None
-    if none of the candidates have a known price."""
-    priced = [candidate["price"] for candidate in candidates if candidate["price"]]
-    if not priced:
+def clear_winner(ranked):
+    """The one candidate that contains every word of the label's name and
+    fits it strictly better than any other - or None. Two variants that
+    both fit equally well (the label doesn't say which colour) is not a
+    winner."""
+    if not ranked or ranked[0][0] < 1.0:
         return None
-    price, _count = Counter(priced).most_common(1)[0]
-    return price
+    if len(ranked) > 1 and ranked[1][:2] == ranked[0][:2]:
+        return None
+    return ranked[0][2]
+
+
+def find_by_name(session, cache, cache_lock, varenavn, label_tokens, exclude_url=""):
+    """Candidates found by searching the webshop for the label's name,
+    keeping only those that contain every word of it - numbers, sizes and
+    the model name included. Needed because the webshop search always
+    returns *something*: when the real product isn't on the shop it
+    suggests a near miss (Bali -> Cali, Siesta 140x200 -> Siesta 200x300),
+    and those must never be offered."""
+    query = " ".join(name_tokens(varenavn))
+    if not query:
+        return []
+    handles = search_shop(session, cache, cache_lock, query, 3)
+    if not handles:
+        # Long names with colour/options can be too specific for the
+        # shop's search - retry with just the start of the name
+        short_query = " ".join(label_tokens[:3])
+        if short_query != query:
+            handles = search_shop(session, cache, cache_lock, short_query, 3)
+    found = []
+    for handle in handles:
+        product = fetch_shop_product(session, cache, cache_lock, handle)
+        if product["url"] == exclude_url:
+            continue
+        for coverage, shop_coverage, candidate in rank_candidates(product["candidates"], label_tokens):
+            if coverage == 1.0:
+                found.append((shop_coverage, candidate))
+    found.sort(key=lambda entry: entry[0], reverse=True)
+    return [candidate for _, candidate in found]
 
 
 def format_combined_price(current_price, compare_price):
@@ -464,67 +614,81 @@ def format_combined_price(current_price, compare_price):
     return current_price
 
 
-def format_default_price_note(default_price):
-    """Marks a guessed price as unmistakably unconfirmed - this string is
-    what ends up both in the review window's Pris field and, if approved
-    as-is, in the exported comments column, so it must stay self-explanatory
-    on its own without the rest of the app's context."""
-    return f"~{default_price} (vejledende, ukendt variant)"
+def lookup_shop_price(session, cache, cache_lock, mk_varenummer, varenavn, part=""):
+    """Find the label's product on the webshop.
 
+    Fills in varenavn/price/url only when it is safe to do so without
+    anyone looking: the product was found via the label's own number,
+    exactly one variant contains every word of the label's name, and the
+    item isn't one box of several (`part`, those never get a price).
+    Everything else returns `candidates` for the user to choose from, plus a
+    warning that says what to check:
 
-def lookup_shop_price(session, cache, cache_lock, mk_varenummer, mk_ordrenr, ocr_varenavn):
-    """Look up a label's price on the webshop. Only ever fills in
-    varenavn/price/compare_price when exactly one candidate's name matches
-    the OCR'd text - anything else (no product found, or an ambiguous
-    match) instead returns ranked `candidates` for a human to pick from,
-    rather than silently attaching a price that might belong to the wrong
-    product or variant.
+    - the number isn't on the shop but the name is -> offered, to confirm
+      (the number is often a supplier code, e.g. "UE 45990201")
+    - the number points to a different product than the name -> both are
+      offered, as the label's number may be wrong (e.g. 106258 is a Vetro
+      table, but the label says Manhattan sofa)
+    - neither is found -> nothing is offered
 
-    Warning messages here deliberately stay short - the OCR'd varenavn is
-    already visible in the review window's own Varenavn field, the raw OCR
-    text has its own (collapsible) panel, and any website candidates are
-    shown right below the warning as pickable buttons, so repeating all of
-    that inside the warning text would just be noise."""
-    result = {
-        "varenavn": "",
-        "price": "",
-        "compare_price": "",
-        "url": "",
-        "candidates": [],
-        "default_price": None,
-    }
-    search_values = [value for value in (mk_varenummer, mk_ordrenr) if value]
-    if not search_values:
-        return result, ["Kunne ikke søge pris uden MK-varenummer eller MK-ordrenummer"]
+    Warnings are (category, message) tuples, category one of
+    SHOP_WARNING_CATEGORIES."""
+    result = {"varenavn": "", "price": "", "compare_price": "", "url": "", "candidates": []}
+    label_tokens = name_tokens(varenavn)
+    number = BOX_PART_SUFFIX_RE.sub("", (mk_varenummer or "").strip())
+    if not number and not label_tokens:
+        return result, [("shop", "Kan ikke søge på hjemmesiden uden varenummer eller varenavn")]
 
-    fetched, fetch_error = _fetch_product_data(session, cache, cache_lock, search_values)
-    if fetched is None:
-        return result, [fetch_error]
+    try:
+        by_number = None
+        if number:
+            handles = search_shop(session, cache, cache_lock, number, 1)
+            if handles:
+                by_number = fetch_shop_product(session, cache, cache_lock, handles[0])
 
-    product_title, product_data, product_url = fetched
-    result["url"] = product_url
-    candidates = build_variant_candidates(product_title, product_data)
+        ranked = rank_candidates(by_number["candidates"], label_tokens) if by_number else []
+        winner = clear_winner(ranked)
+        if winner is not None:
+            if part:
+                # Identified, but a box part never gets a price - offer it
+                # so the user can confirm with one click
+                result["candidates"] = [{**winner, "found_by": "nummer"}]
+                return result, []
+            result["varenavn"] = winner["name"]
+            result["price"] = winner["price"]
+            result["compare_price"] = winner["compare_price"]
+            result["url"] = winner["url"]
+            warnings = [] if winner["price"] else [("shop", "Kunne ikke læse aktuel pris på hjemmesiden")]
+            return result, warnings
 
-    exact_matches = [
-        candidate for candidate in candidates
-        if normalize_name_for_match(candidate["name"]) == normalize_name_for_match(ocr_varenavn)
-    ]
-    if len(exact_matches) == 1:
-        match = exact_matches[0]
-        result["varenavn"] = match["name"]
-        result["price"] = match["price"]
-        result["compare_price"] = match["compare_price"]
-        result["url"] = build_variant_url(product_url, match["id"])
-        warnings = [] if result["price"] else ["Kunne ikke læse aktuel pris"]
-        return result, warnings
+        by_name = find_by_name(
+            session, cache, cache_lock, varenavn, label_tokens, by_number["url"] if by_number else ""
+        ) if label_tokens else []
+    except Exception as error:
+        return result, [("shop", f"Kunne ikke søge på hjemmesiden: {error}")]
 
-    result["candidates"] = rank_candidates_by_similarity(candidates, ocr_varenavn)
-    result["default_price"] = estimate_default_price(candidates)
-    if len(candidates) == 1:
-        warnings = ["Produktnavn matchede ikke det fundne produkt på hjemmesiden"]
-    else:
-        warnings = ["Produktnavn og farve matchede ikke præcist - vælg det rigtige nedenfor"]
-    return result, warnings
+    number_candidates = [{**candidate, "found_by": "nummer"} for _, _, candidate in ranked[:5]]
+    by_name = [{**candidate, "found_by": "navn"} for candidate in by_name]
+    if by_number and by_name:
+        result["candidates"] = by_name[:3] + number_candidates[:3]
+        return result, [(
+            "conflict",
+            f"Nummeret {number} hører til \"{by_number['title']}\" på hjemmesiden, "
+            f"men labelen siger \"{varenavn}\". Vælg den rigtige vare.",
+        )]
+    if by_number:
+        result["candidates"] = number_candidates
+        return result, [("variant", "Navnet passer ikke præcist med hjemmesiden - vælg den rigtige vare")]
+    if by_name:
+        result["candidates"] = by_name[:5]
+        return result, [(
+            "by_name",
+            f"Nummeret {number} findes ikke på hjemmesiden, men varen blev fundet via navnet. "
+            "Tjek at det er den rigtige." if number else
+            "Varen blev fundet via navnet. Tjek at det er den rigtige.",
+        )]
+    return result, [("not_found", "Varen blev ikke fundet på hjemmesiden")]
+
 
 def derive_source_folder(image_files, extraction_root=None, zip_path=None):
     """Figure out the "batch name" (used for the Excel first row and its
@@ -617,6 +781,8 @@ class DoclingImageMiner:
         self.http_session.mount("http://", adapter)
         self.price_cache = {}
         self.price_cache_lock = threading.Lock()
+        # Product photos for the review window's suggestion cards, by URL
+        self.thumbnail_cache = {}
         self.loading = True
         self.processing = False
         self.source_folder_name = ""
@@ -1569,6 +1735,21 @@ class DoclingImageMiner:
 
 
 class ReviewWindow:
+    """The window the user uses to check a label that couldn't be approved
+    automatically. Built to be hard to get wrong:
+
+    - one plain question at the top says what to check (review_question),
+      and the fields it concerns are marked
+    - webshop suggestions are picture cards, not buttons that look like
+      text fields, and picking one only fills in the fields - nothing is
+      saved until "Godkend"
+    - "Godkend" is the only green button; "Læs billedet igen" sits under
+      the photo with the other photo tools, so it can't be mistaken for it
+    - leaving with unsaved edits asks first
+    """
+
+    THUMBNAIL_SIZE = 72
+
     def __init__(self, app, record, standalone=False):
         """standalone=True is reopen_record_review's path back into an
         already-processed record: same window/UI, but confirm/skip/retry
@@ -1580,8 +1761,8 @@ class ReviewWindow:
         self.record = None
         self.window = tk.Toplevel(app.root)
         self.window.title("Rediger label" if standalone else "Label-gennemgang")
-        self.window.geometry("1050x680")
-        self.window.minsize(900, 600)
+        self.window.geometry("1180x760")
+        self.window.minsize(980, 640)
         self.window.protocol("WM_DELETE_WINDOW", self.skip)
         set_window_icon(self.window)
 
@@ -1591,61 +1772,87 @@ class ReviewWindow:
         # theme so it tracks light/dark mode instead of being hardcoded -
         # resolved to a real hex value (see resolve_tk_color) since PIL
         # can't parse the symbolic color names ttk themes sometimes report.
-        theme_background = ttk.Style(self.window).lookup("TFrame", "background")
+        style = ttk.Style(self.window)
+        theme_background = style.lookup("TFrame", "background")
         self.canvas_background = resolve_tk_color(self.window, theme_background or "#202020")
-
-        # Candidate/price buttons and the raw-text disclosure toggle are
-        # full-width (sticky="ew") but ttk.Button centers its label by
-        # default, so text of varying length would otherwise start at a
-        # different x position on every row - anchor="w" keeps them all
-        # flush against the same left edge instead.
-        ttk.Style(self.window).configure("Candidate.TButton", anchor="w")
+        self.text_color = resolve_tk_color(
+            self.window, style.lookup("TLabel", "foreground") or "#ffffff", "#ffffff"
+        )
+        self.card_background = shade_color(self.canvas_background, 0.08)
+        self.card_border = shade_color(self.canvas_background, 0.25)
+        # Disclosure toggles ("▶ Flere værktøjer") read as plain text links
+        style.configure("Candidate.TButton", anchor="w")
 
         self.window.columnconfigure(0, weight=3, minsize=480)
-        self.window.columnconfigure(1, weight=2, minsize=340)
+        self.window.columnconfigure(1, weight=2, minsize=420)
         self.window.rowconfigure(0, weight=1, minsize=420)
 
+        # ---- Left: the photo, and everything that acts on the photo -----
         self.image_frame = ttk.Frame(self.window, padding=12)
         self.image_frame.grid(row=0, column=0, sticky="nsew")
         self.image_frame.columnconfigure(0, weight=1)
-        self.image_frame.rowconfigure(0, weight=0)
-        self.image_frame.rowconfigure(1, weight=1)
+        self.image_frame.rowconfigure(0, weight=1)
 
         # Has to be set before the rotation slider below: its initial
-        # .set(0) fires _on_rotation_slider synchronously (see the comment
-        # on rotation_label just below), which calls resize_image(), which
-        # reads self.original_image. Any later resize_image() trigger
-        # (canvas <Configure>, the slider, a 90-degree button) is safe once
-        # this exists - it just wouldn't have anything to draw yet.
+        # .set(0) fires _on_rotation_slider synchronously, which calls
+        # resize_image(), which reads self.original_image.
         self.original_image = None
         self.working_image = None
         self.crop_drag_start = None
         self.pending_crop_fraction = None
         self.image_bounds = None
-
-        # Free-rotation slider: drag to straighten the photo at any angle,
-        # live-previewed on a small, cheap-to-rotate thumbnail. The crop
-        # selection is stored as fractions of that preview (see
-        # crop_release_event), and only the final build_edited_image()
-        # call ever rotates the full-resolution photo.
         self.rotation_angle = 0.0
-        rotate_row = ttk.Frame(self.image_frame)
-        rotate_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        rotate_row.columnconfigure(1, weight=1)
-        ttk.Label(rotate_row, text="Rotation").grid(row=0, column=0, padx=(0, 8))
-        # The label has to exist before the slider is created below: the
-        # slider's initial .set(0) fires its -command callback immediately
-        # (synchronously, not just on user interaction), and that callback
-        # updates this label - creating the slider first meant every single
-        # review window threw an AttributeError on open. It was swallowed
-        # silently before install_error_reporting existed, so it had no
-        # visible effect (rotation_angle just stayed 0, and show_image's
-        # own resize_image() call painted the image correctly regardless) -
-        # but it surfaced as a real error dialog as soon as errors stopped
-        # being swallowed.
-        self.rotation_label = ttk.Label(rotate_row, text="0°", width=5, anchor="e")
+        # The label's area as fractions of the photo (found during OCR,
+        # see extract_label) - shown zoomed in on by default
+        self.zoom_box = None
+        self.zoomed = False
+
+        self.image_canvas = tk.Canvas(
+            self.image_frame,
+            background=self.canvas_background,
+            highlightthickness=0,
+        )
+        self.image_canvas.grid(row=0, column=0, sticky="nsew")
+        self.image_canvas.bind("<Configure>", self.resize_image)
+        self.image_canvas.bind("<ButtonPress-1>", self.crop_start_event)
+        self.image_canvas.bind("<B1-Motion>", self.crop_drag_event)
+        self.image_canvas.bind("<ButtonRelease-1>", self.crop_release_event)
+
+        image_actions = ttk.Frame(self.image_frame)
+        image_actions.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        for column in range(4):
+            image_actions.columnconfigure(column, weight=1)
+        ttk.Button(
+            image_actions, text="⟲ Drej", command=lambda: self.rotate_quarter_turn(-90)
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(
+            image_actions, text="⟳ Drej", command=lambda: self.rotate_quarter_turn(90)
+        ).grid(row=0, column=1, sticky="ew", padx=4)
+        self.zoom_button = ttk.Button(image_actions, text="Vis hele billedet", command=self.toggle_zoom)
+        self.zoom_button.grid(row=0, column=2, sticky="ew", padx=4)
+        ttk.Button(
+            image_actions, text="↻ Læs billedet igen", command=self.retry
+        ).grid(row=0, column=3, sticky="ew", padx=(4, 0))
+
+        self.tools_visible = False
+        self.tools_toggle = ttk.Button(
+            self.image_frame,
+            text="▶ Flere værktøjer",
+            command=self.toggle_tools,
+            style="Candidate.TButton",
+        )
+        self.tools_toggle.grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.tools_frame = ttk.Frame(self.image_frame)
+        self.tools_frame.grid(row=3, column=0, sticky="ew")
+        self.tools_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(self.tools_frame, text="Rotation").grid(row=0, column=0, padx=(0, 8))
+        # The label has to exist before the slider: the slider's initial
+        # .set(0) fires its -command callback immediately, and that
+        # callback updates this label.
+        self.rotation_label = ttk.Label(self.tools_frame, text="0°", width=5, anchor="e")
         self.rotation_slider = ttk.Scale(
-            rotate_row,
+            self.tools_frame,
             from_=-180,
             to=180,
             orient="horizontal",
@@ -1654,35 +1861,38 @@ class ReviewWindow:
         self.rotation_slider.set(0)
         self.rotation_slider.grid(row=0, column=1, sticky="ew")
         self.rotation_label.grid(row=0, column=2, padx=(8, 0))
-        # Quick 90-degree nudges - the free-rotation slider is great for
-        # fine straightening, but a label that's simply sideways is faster
-        # to fix with one click than a careful drag.
-        ttk.Button(
-            rotate_row, text="⟲ 90°", width=6, command=lambda: self.rotate_quarter_turn(-90)
-        ).grid(row=0, column=3, padx=(8, 0))
-        ttk.Button(
-            rotate_row, text="⟳ 90°", width=6, command=lambda: self.rotate_quarter_turn(90)
-        ).grid(row=0, column=4, padx=(4, 0))
-
-        self.image_canvas = tk.Canvas(
-            self.image_frame,
-            background=self.canvas_background,
-            highlightthickness=0,
+        tool_buttons = ttk.Frame(self.tools_frame)
+        tool_buttons.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        tool_buttons.columnconfigure(0, weight=1)
+        tool_buttons.columnconfigure(1, weight=1)
+        ttk.Button(tool_buttons, text="Spejl", command=self.mirror).grid(
+            row=0, column=0, sticky="ew", padx=(0, 4)
         )
-        self.image_canvas.grid(row=1, column=0, sticky="nsew")
-        self.image_canvas.bind("<Configure>", self.resize_image)
-        self.image_canvas.bind("<ButtonPress-1>", self.crop_start_event)
-        self.image_canvas.bind("<B1-Motion>", self.crop_drag_event)
-        self.image_canvas.bind("<ButtonRelease-1>", self.crop_release_event)
+        ttk.Button(tool_buttons, text="Nulstil billede", command=self.reset_image).grid(
+            row=0, column=1, sticky="ew", padx=(4, 0)
+        )
+        ttk.Label(
+            self.tools_frame,
+            text="Træk på billedet for at beskære det, og tryk så \"Læs billedet igen\".",
+            foreground=COLOR_MUTED,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Label(self.tools_frame, text="Tekst læst fra labelen:", foreground=COLOR_MUTED).grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(8, 2)
+        )
+        self.raw_text_widget = tk.Text(self.tools_frame, height=3, wrap="word")
+        self.raw_text_widget.configure(state="disabled")
+        self.raw_text_widget.grid(row=4, column=0, columnspan=3, sticky="ew")
+        self.tools_frame.grid_remove()
 
+        # ---- Right: what to check, the choices, the fields, the verdict --
         panel = ttk.Frame(self.window, padding=(18, 18, 18, 0))
         panel.grid(row=0, column=1, sticky="nsew")
         panel.columnconfigure(0, weight=1)
         panel.rowconfigure(0, weight=1)
         panel.rowconfigure(1, weight=0)
 
-        # Scrollable middle: warnings/raw text/fields can grow arbitrarily
-        # tall without ever pushing the footer buttons off-screen.
+        # Scrollable middle: the question/choices/fields can grow taller
+        # than the window without ever pushing the footer buttons off-screen.
         scroll_area = ttk.Frame(panel)
         scroll_area.grid(row=0, column=0, sticky="nsew")
         scroll_area.columnconfigure(0, weight=1)
@@ -1707,12 +1917,7 @@ class ReviewWindow:
                 scrollregion=self.content_canvas.bbox("all")
             ),
         )
-        self.content_canvas.bind(
-            "<Configure>",
-            lambda event: self.content_canvas.itemconfigure(
-                self.content_window, width=event.width
-            ),
-        )
+        self.content_canvas.bind("<Configure>", self._on_content_resize)
         self.content_canvas.bind(
             "<Enter>",
             lambda event: self.content_canvas.bind_all(
@@ -1723,77 +1928,96 @@ class ReviewWindow:
             "<Leave>", lambda event: self.content_canvas.unbind_all("<MouseWheel>")
         )
 
+        header = ttk.Frame(content)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
         ttk.Label(
-            content,
-            text="Gennemse label",
+            header,
+            text="Rediger label" if standalone else "Gennemse label",
             font=("Segoe UI", 16, "bold"),
         ).grid(row=0, column=0, sticky="w")
         self.review_count = tk.StringVar()
-        self.review_count_label = ttk.Label(
-            content,
-            textvariable=self.review_count,
-        )
-        self.review_count_label.grid(row=0, column=0, sticky="e")
-        if standalone:
-            # "Gennemgang: X/Y" is a live-batch-queue position - meaningless
-            # for a record reopened after the fact.
-            self.review_count_label.grid_remove()
-        ttk.Label(
-            content,
-            text="Advarsler",
-            font=("Segoe UI", 10, "bold"),
-        ).grid(row=1, column=0, sticky="w", pady=(14, 3))
-        self.warnings_frame = ttk.Frame(content)
-        self.warnings_frame.grid(row=2, column=0, sticky="ew")
-        self.warnings_frame.columnconfigure(0, weight=1)
+        if not standalone:
+            # A live-batch-queue position - meaningless for a record
+            # reopened after the fact
+            ttk.Label(header, textvariable=self.review_count, foreground=COLOR_MUTED).grid(
+                row=0, column=1, sticky="e"
+            )
 
-        # Collapsed by default - the raw OCR text is mostly only needed to
-        # diagnose a misread, and showing it expanded for every single
-        # image (as this used to, whenever a warning category "relevant"
-        # to it was present) made the window noisier than the raw text was
-        # usually worth. One click reveals it when it's actually needed.
-        self.raw_text_visible = False
-        self.raw_text_toggle = ttk.Button(
+        # The question: a coloured box, the first thing the eye lands on
+        self.question_frame = tk.Frame(
             content,
-            text="▶ Vis rå tekst",
-            command=self.toggle_raw_text,
-            style="Candidate.TButton",
+            background=self.card_background,
+            highlightthickness=2,
+            highlightbackground=COLOR_WARNING,
+            padx=12,
+            pady=10,
         )
-        self.raw_text_toggle.grid(row=3, column=0, sticky="w", pady=(12, 2))
-        self.raw_text_widget = tk.Text(content, height=4, wrap="word")
-        self.raw_text_widget.configure(state="disabled")
-        self.raw_text_widget.grid(row=4, column=0, sticky="ew")
-        self.raw_text_widget.grid_remove()
+        self.question_frame.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        self.question_frame.columnconfigure(0, weight=1)
+        self.question_title = tk.Label(
+            self.question_frame,
+            font=("Segoe UI", 13, "bold"),
+            background=self.card_background,
+            foreground=COLOR_WARNING,
+            justify="left",
+            anchor="w",
+        )
+        self.question_title.grid(row=0, column=0, sticky="ew")
+        self.question_detail = tk.Label(
+            self.question_frame,
+            font=("Segoe UI", 10),
+            background=self.card_background,
+            foreground=self.text_color,
+            justify="left",
+            anchor="w",
+        )
+        self.question_detail.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.question_others = tk.Label(
+            self.question_frame,
+            font=("Segoe UI", 9),
+            background=self.card_background,
+            foreground=COLOR_MUTED,
+            justify="left",
+            anchor="w",
+        )
+        self.question_others.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        self.wrapping_labels = [self.question_title, self.question_detail, self.question_others]
+
+        # Webshop suggestions as picture cards (see show_candidates)
+        self.candidates = []
+        self.candidate_cards = []
+        self.selected_candidate = None
+        self.blank_thumbnail = tk.PhotoImage(width=self.THUMBNAIL_SIZE, height=self.THUMBNAIL_SIZE)
+        self.choices_frame = ttk.Frame(content)
+        self.choices_frame.grid(row=2, column=0, sticky="ew", pady=(16, 0))
+        self.choices_frame.columnconfigure(0, weight=1)
 
         fields = ttk.Frame(content)
-        fields.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        fields.grid(row=3, column=0, sticky="ew", pady=(16, 0))
         fields.columnconfigure(0, weight=1)
 
         # One free-text price/comment field rather than a separate "Pris"
-        # + "Sammenligningspris" pair - the latter used to just repeat
-        # whatever discount price format_combined_price() already folded
-        # into this field as "1234 kr (4321 kr)", with nothing visually
-        # tying the two together. It also never reached the export either
-        # way (excel_rows() only ever reads "price", straight into the
-        # "Vejledende priser" column), so there was no
-        # structured data lost by dropping it, only a redundant echo of
-        # the same numbers.
+        # + "Sammenligningspris" pair - excel_rows() only ever reads
+        # "price", straight into the "Vejledende priser"
+        # column, and format_combined_price() already folds any discount
+        # into it as "1234 kr (4321 kr)".
         self.entries = {}
+        self.entry_labels = {}
         self.add_entry(fields, 0, "MK Varenummer", "mk_varenummer")
         self.add_entry(fields, 1, "Varenavn", "varenavn")
         self.add_entry(fields, 2, "MK ordrenr", "mk_ordrenr")
         self.add_entry(fields, 3, "Stand", "stand")
         self.add_entry(fields, 4, "Pris / kommentar", "price")
+        self.loaded_fields = {}
 
         # Re-runs just the webshop lookup with whatever's currently typed
-        # above - for fixing a typo'd number/name without redoing OCR on
-        # the image. Placed right under the fields it refreshes rather
-        # than in the footer, so it stays visually tied to them.
+        # above - for a corrected number/name, without redoing OCR.
         self.price_refresh_in_progress = False
         price_actions = ttk.Frame(content)
-        price_actions.grid(row=6, column=0, sticky="ew", pady=(0, 4))
+        price_actions.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         self.price_refresh_button = ttk.Button(
-            price_actions, text="🔄  Genindlæs pris", command=self.refresh_price
+            price_actions, text="🔍  Søg på hjemmesiden igen", command=self.refresh_price
         )
         self.price_refresh_button.pack(side="left")
         self.price_refresh_status = ttk.Label(price_actions, text="", foreground=COLOR_MUTED)
@@ -1805,153 +2029,235 @@ class ReviewWindow:
         footer.grid(row=1, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
         footer.columnconfigure(1, weight=1)
-        confirm_text = "Gem ændringer" if standalone else "Godkend og næste"
-        skip_text = "Luk" if standalone else "Spring over"
-        ttk.Button(footer, text=confirm_text, command=self.confirm).grid(
-            row=0,
-            column=0,
-            sticky="ew",
-            padx=(0, 4),
-        )
-        ttk.Button(footer, text=skip_text, command=self.skip).grid(
-            row=0,
-            column=1,
-            sticky="ew",
-            padx=(4, 0),
-        )
-        # The one "primary action" in this window - styled as the theme's
-        # accent button (sv-ttk's Accent.TButton) so it stands out without
-        # hardcoding colors that would clash once a theme is applied.
-        retry_button = ttk.Button(
+        # A plain tk.Button, not ttk: ttk themes don't allow a custom fill
+        # colour, and this has to be unmistakably *the* button to press
+        tk.Button(
             footer,
-            text="Prøv igen (gen-læs label)",
-            command=self.retry,
-            style=accent_button_style(),
-        )
-        retry_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+            text="✓  Gem ændringer" if standalone else "✓  Godkend og næste",
+            command=self.confirm,
+            font=("Segoe UI", 12, "bold"),
+            background=COLOR_APPROVE,
+            foreground="#ffffff",
+            activebackground=COLOR_APPROVE_ACTIVE,
+            activeforeground="#ffffff",
+            relief="flat",
+            borderwidth=0,
+            cursor="hand2",
+            pady=9,
+        ).grid(row=0, column=0, columnspan=2, sticky="ew")
         ttk.Button(
             footer,
-            text="Åbn hjemmeside",
-            command=self.open_website,
-        ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-
-        image_buttons = ttk.Frame(self.image_frame)
-        image_buttons.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        for column in range(2):
-            image_buttons.columnconfigure(column, weight=1)
-        ttk.Button(image_buttons, text="Spejl", command=self.mirror).grid(row=0, column=0, sticky="ew")
-        ttk.Button(image_buttons, text="Nulstil", command=self.reset_image).grid(row=0, column=1, sticky="ew")
-        ttk.Label(
-            self.image_frame,
-            text="Træk på billedet for at beskære det · brug skyderen ovenfor for at rette det",
-            foreground="#a0a0a0",
-        ).grid(row=3, column=0, pady=(4, 0))
+            text="Luk" if standalone else "Spring over – ret senere",
+            command=self.skip,
+        ).grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(8, 0))
+        ttk.Button(footer, text="Åbn hjemmeside", command=self.open_website).grid(
+            row=1, column=1, sticky="ew", padx=(4, 0), pady=(8, 0)
+        )
 
         self.load_record(record)
 
     def add_entry(self, parent, row, label, key):
-        label_row = row * 2
-        entry_row = row * 2 + 1
-        ttk.Label(parent, text=label).grid(row=label_row, column=0, sticky="w", pady=(0, 2))
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row * 2, column=0, sticky="w", pady=(0, 2))
         entry = ttk.Entry(parent)
-        entry.grid(
-            row=entry_row,
-            column=0,
-            sticky="ew",
-            pady=(0, 9),
-        )
+        entry.grid(row=row * 2 + 1, column=0, sticky="ew", pady=(0, 9))
         self.entries[key] = entry
+        self.entry_labels[key] = (label_widget, label)
+
+    def mark_fields(self, fields):
+        """Flag the entry fields the current question is about."""
+        for key, (label_widget, text) in self.entry_labels.items():
+            if key in fields:
+                label_widget.configure(text=f"⚠  {text} – tjek", foreground=COLOR_WARNING)
+            else:
+                # "" = the theme's own label colour
+                label_widget.configure(text=text, foreground="")
+
+    def _on_content_resize(self, event):
+        self.content_canvas.itemconfigure(self.content_window, width=event.width)
+        # Wrap long texts to the panel's width instead of a fixed guess
+        for label in self.wrapping_labels:
+            label.configure(wraplength=max(event.width - 40, 200))
 
     def _on_content_mousewheel(self, event):
         self.content_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-    def set_warnings(self, warnings, candidates=()):
-        for widget in self.warnings_frame.winfo_children():
+    def show_question(self, warnings):
+        question = review_question(warnings, (self.record or {}).get("parsed", {}).get("part", ""))
+        if question is None:
+            color = COLOR_OK
+            title, detail, others, fields = "Ingen problemer fundet", "Ret felterne hvis noget er forkert.", [], []
+        else:
+            color = question["color"]
+            title, detail = question["title"], question["detail"]
+            others, fields = question["others"], question["fields"]
+        self.question_frame.configure(highlightbackground=color)
+        self.question_title.configure(text=title, foreground=color)
+        self.question_detail.configure(text=detail)
+        if others:
+            self.question_others.configure(text="Også: " + " · ".join(others))
+            self.question_others.grid()
+        else:
+            self.question_others.grid_remove()
+        self.mark_fields(fields)
+        return fields
+
+    def show_candidates(self, candidates):
+        """Webshop suggestions as picture cards: product photo, name, price
+        and whether it was found via the number or the name. Clicking a
+        card selects it (see select_candidate)."""
+        for widget in self.choices_frame.winfo_children():
             widget.destroy()
-
-        if not warnings:
-            ttk.Label(
-                self.warnings_frame, text="Ingen advarsler", foreground=COLOR_OK
-            ).grid(row=0, column=0, sticky="w")
+        self.candidates = list(candidates)
+        self.candidate_cards = []
+        self.selected_candidate = None
+        if not self.candidates:
+            self.choices_frame.grid_remove()
             return
+        self.choices_frame.grid()
+        ttk.Label(
+            self.choices_frame, text="Hvilken vare er det?", font=("Segoe UI", 11, "bold")
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            self.choices_frame,
+            text="Klik på den vare der passer til labelen.",
+            foreground=COLOR_MUTED,
+        ).grid(row=1, column=0, sticky="w", pady=(0, 6))
+        is_box_part = bool(self.record and self.record["parsed"].get("part"))
+        for index, candidate in enumerate(self.candidates):
+            card = tk.Frame(
+                self.choices_frame,
+                background=self.card_background,
+                highlightthickness=2,
+                highlightbackground=self.card_border,
+                cursor="hand2",
+            )
+            card.grid(row=index + 2, column=0, sticky="ew", pady=(0, 6))
+            card.columnconfigure(1, weight=1)
+            thumbnail = tk.Label(card, image=self.blank_thumbnail, background=self.card_background)
+            thumbnail.grid(row=0, column=0, rowspan=2, padx=8, pady=8)
+            name = tk.Label(
+                card,
+                text=candidate["name"],
+                font=("Segoe UI", 10, "bold"),
+                background=self.card_background,
+                foreground=self.text_color,
+                justify="left",
+                anchor="w",
+                wraplength=260,
+            )
+            name.grid(row=0, column=1, sticky="sw", pady=(8, 0))
+            price = candidate["price"] or "ingen pris"
+            if is_box_part:
+                price = "delvis vare – ingen pris"
+            found_by = candidate.get("found_by")
+            details = price + (f"   ·   fundet via {found_by}" if found_by else "")
+            meta = tk.Label(
+                card, text=details, background=self.card_background, foreground=COLOR_MUTED, anchor="w"
+            )
+            meta.grid(row=1, column=1, sticky="nw", pady=(0, 8))
+            check = tk.Label(
+                card,
+                text="",
+                font=("Segoe UI", 16, "bold"),
+                background=self.card_background,
+                foreground=COLOR_OK,
+                width=2,
+            )
+            check.grid(row=0, column=2, rowspan=2, padx=(0, 10))
+            for widget in (card, thumbnail, name, meta, check):
+                widget.bind("<Button-1>", lambda event, i=index: self.select_candidate(i))
+            self.candidate_cards.append({"frame": card, "thumbnail": thumbnail, "check": check})
+        threading.Thread(
+            target=self._fetch_thumbnails,
+            args=(self.record, [candidate.get("image", "") for candidate in self.candidates]),
+            daemon=True,
+        ).start()
 
-        grouped = {}
-        for category, message in warnings:
-            grouped.setdefault(category, []).append(message)
-
-        row = 0
-        for category in WARNING_CATEGORY_ORDER:
-            messages = grouped.get(category)
-            if not messages:
+    def _fetch_thumbnails(self, record, image_urls):
+        """Background thread: download the shop's product photos for the
+        cards. Cached on the app, so the same product isn't fetched twice."""
+        for index, url in enumerate(image_urls):
+            if not url:
                 continue
-            category_color = WARNING_CATEGORY_COLORS.get(category, COLOR_WARNING)
-            ttk.Label(
-                self.warnings_frame,
-                text=WARNING_CATEGORY_LABELS[category],
-                font=("Segoe UI", 9, "bold"),
-                foreground=category_color,
-            ).grid(row=row, column=0, sticky="w", pady=(6 if row else 0, 2))
-            row += 1
-            for message in messages:
-                ttk.Label(
-                    self.warnings_frame,
-                    text=f"• {message}",
-                    wraplength=340,
-                    justify="left",
-                ).grid(row=row, column=0, sticky="w")
-                row += 1
+            image = self.app.thumbnail_cache.get(url)
+            if image is None:
+                try:
+                    separator = "&" if "?" in url else "?"
+                    response = self.app.http_session.get(
+                        f"{url}{separator}width=200", headers={"User-Agent": "Mozilla/5.0"}, timeout=10
+                    )
+                    response.raise_for_status()
+                    image = Image.open(io.BytesIO(response.content)).convert("RGB")
+                    image.thumbnail((self.THUMBNAIL_SIZE, self.THUMBNAIL_SIZE), Image.Resampling.LANCZOS)
+                    self.app.thumbnail_cache[url] = image
+                except Exception as error:
+                    debug_log(f"Kunne ikke hente produktbillede {url}: {error}")
+                    continue
+            try:
+                self.window.after(0, self._show_thumbnail, record, index, image)
+            except (RuntimeError, tk.TclError):
+                return  # window closed meanwhile
 
-        # Suggested variants live right under the shop-mismatch warning
-        # they resolve, instead of a separate always-empty panel elsewhere
-        # in the layout - picking one clears the warning above it.
-        if candidates:
-            ttk.Label(
-                self.warnings_frame,
-                text="Vælg det rigtige match:",
-                font=("Segoe UI", 9, "bold"),
-                foreground=COLOR_MUTED,
-            ).grid(row=row, column=0, sticky="w", pady=(8, 2))
-            row += 1
-            for candidate in candidates:
-                label = candidate["name"]
-                if candidate["price"]:
-                    label += f" — {candidate['price']}"
-                ttk.Button(
-                    self.warnings_frame,
-                    text=label,
-                    command=lambda c=candidate: self.apply_candidate(c),
-                    style="Candidate.TButton",
-                ).grid(row=row, column=0, sticky="ew", pady=(0, 4))
-                row += 1
+    def _show_thumbnail(self, record, index, image):
+        if self.record is not record or index >= len(self.candidate_cards):
+            return
+        photo = ImageTk.PhotoImage(image)
+        card = self.candidate_cards[index]
+        card["thumbnail"].configure(image=photo)
+        card["photo"] = photo  # Tk only shows it while a reference exists
 
-    def apply_candidate(self, candidate):
-        """Called when you click a suggested-variant button: fills in the
-        matched name/price, drops the now-resolved shop warning, and
-        upgrades the record's URL to a deep link straight to this specific
-        variant (the record's `url` up to now is only the bare product
-        page - see build_variant_url)."""
+    def select_candidate(self, index):
+        """A card was clicked: fill the name and price fields from it and
+        mark it chosen. Nothing is written to the record until "Godkend"
+        (see confirm) - skipping after picking leaves the record as it was.
+        A box part (kolli 1/2 etc.) never gets a price, not even here."""
+        candidate = self.candidates[index]
+        # Checked before the name is replaced: the part marker may only be
+        # in the label's name ("2/2 Vega ..."), never in the shop's
+        fields = self.read_fields()
+        is_box_part = bool(
+            box_part(fields["mk_varenummer"], fields["varenavn"])
+            or (self.record is not None and self.record["parsed"].get("part"))
+        )
         self.entries["varenavn"].delete(0, tk.END)
         self.entries["varenavn"].insert(0, candidate["name"])
         self.entries["price"].delete(0, tk.END)
-        self.entries["price"].insert(
-            0, format_combined_price(candidate["price"], candidate["compare_price"])
-        )
-        if self.record is not None:
-            self.record["parsed"]["url"] = build_variant_url(
-                self.record["parsed"].get("url", ""), candidate["id"]
+        if not is_box_part:
+            self.entries["price"].insert(
+                0, format_combined_price(candidate["price"], candidate["compare_price"])
             )
-            self.record["warnings"] = [w for w in self.record["warnings"] if w[0] != "shop"]
-            self.record["candidates"] = []
-            self.set_warnings(self.record["warnings"])
+        self.selected_candidate = candidate
+        for card_index, card in enumerate(self.candidate_cards):
+            chosen = card_index == index
+            card["frame"].configure(highlightbackground=COLOR_OK if chosen else self.card_border)
+            card["check"].configure(text="✓" if chosen else "")
 
-    def toggle_raw_text(self):
-        self.raw_text_visible = not self.raw_text_visible
-        if self.raw_text_visible:
-            self.raw_text_widget.grid()
-            self.raw_text_toggle.configure(text="▼ Skjul rå tekst")
+    def toggle_tools(self):
+        self.tools_visible = not self.tools_visible
+        if self.tools_visible:
+            self.tools_frame.grid()
+            self.tools_toggle.configure(text="▼ Færre værktøjer")
         else:
-            self.raw_text_widget.grid_remove()
-            self.raw_text_toggle.configure(text="▶ Vis rå tekst")
+            self.tools_frame.grid_remove()
+            self.tools_toggle.configure(text="▶ Flere værktøjer")
+
+    def toggle_zoom(self):
+        self.zoomed = not self.zoomed and self.zoom_box is not None
+        self.pending_crop_fraction = None
+        self.update_zoom_button()
+        self.resize_image()
+
+    def update_zoom_button(self):
+        if self.zoom_box is None:
+            self.zoom_button.configure(text="Vis hele billedet", state="disabled")
+        else:
+            self.zoom_button.configure(
+                text="Vis hele billedet" if self.zoomed else "Zoom ind på labelen", state="normal"
+            )
+
+    def fields_changed(self):
+        return self.record is not None and self.read_fields() != self.loaded_fields
 
     def refresh_price(self):
         """Re-run just the webshop lookup using whatever's currently typed
@@ -1975,8 +2281,8 @@ class ReviewWindow:
             self.app.price_cache,
             self.app.price_cache_lock,
             fields["mk_varenummer"],
-            fields["mk_ordrenr"],
             fields["varenavn"],
+            box_part(fields["mk_varenummer"], fields["varenavn"]),
         )
         self.window.after(0, self._apply_price_refresh, target_record, shop_result, shop_warnings)
 
@@ -1989,22 +2295,15 @@ class ReviewWindow:
         # returns - see the identical concern in retry_review_in_background.
         if shop_result["varenavn"]:
             target_record["parsed"]["varenavn"] = shop_result["varenavn"]
-            target_record["parsed"]["price"] = format_combined_price(
-                shop_result["price"], shop_result["compare_price"]
-            )
-        elif shop_result["default_price"]:
-            target_record["parsed"]["price"] = format_default_price_note(shop_result["default_price"])
-        else:
-            target_record["parsed"]["price"] = format_combined_price(
-                shop_result["price"], shop_result["compare_price"]
-            )
+        target_record["parsed"]["price"] = format_combined_price(
+            shop_result["price"], shop_result["compare_price"]
+        )
         target_record["parsed"]["compare_price"] = shop_result["compare_price"]
-        if shop_result["url"]:
-            target_record["parsed"]["url"] = shop_result["url"]
+        target_record["parsed"]["url"] = shop_result["url"]
         target_record["candidates"] = shop_result["candidates"]
         target_record["warnings"] = [
-            w for w in target_record["warnings"] if w[0] != "shop"
-        ] + [("shop", message) for message in shop_warnings]
+            w for w in target_record["warnings"] if w[0] not in SHOP_WARNING_CATEGORIES
+        ] + shop_warnings
 
         if self.record is not target_record:
             return
@@ -2012,10 +2311,13 @@ class ReviewWindow:
         for key in ("varenavn", "price"):
             self.entries[key].delete(0, tk.END)
             self.entries[key].insert(0, target_record["parsed"].get(key, ""))
-        self.set_warnings(target_record["warnings"], target_record["candidates"])
+            # Now the record's own values - not unsaved edits
+            self.loaded_fields[key] = self.entries[key].get().strip()
+        self.show_question(target_record["warnings"])
+        self.show_candidates(target_record["candidates"])
         if shop_warnings:
             self.price_refresh_status.configure(
-                text="Intet præcist match - vælg herover eller ret felterne.",
+                text="Intet præcist match - vælg en vare herover eller ret felterne.",
                 foreground=COLOR_WARNING,
             )
         else:
@@ -2030,40 +2332,38 @@ class ReviewWindow:
         self.rotation_angle = 0.0
         self.rotation_slider.set(0)
         self.rotation_label.configure(text="0°")
-
-        warnings = record["warnings"]
-        self.set_warnings(warnings, record.get("candidates", []))
+        self.zoom_box = record["parsed"].get("label_box")
+        self.zoomed = self.zoom_box is not None
+        self.update_zoom_button()
 
         # Reset any in-flight-refresh visuals from whatever record was open
         # before - a late result for that old record is a no-op anyway
         # (see _apply_price_refresh's identity check), but the button/status
         # itself needs to reflect *this* record's idle state regardless.
         self.price_refresh_in_progress = False
-        self.price_refresh_button.configure(state="normal", text="🔄  Genindlæs pris")
+        self.price_refresh_button.configure(state="normal", text="🔍  Søg på hjemmesiden igen")
         self.price_refresh_status.configure(text="")
-
-        # Always starts collapsed - see toggle_raw_text.
-        self.raw_text_visible = False
-        self.raw_text_widget.grid_remove()
-        self.raw_text_toggle.configure(text="▶ Vis rå tekst")
-        raw_text = record.get("raw_text", "")
-        if raw_text:
-            self.raw_text_toggle.grid()
-        else:
-            self.raw_text_toggle.grid_remove()
 
         self.raw_text_widget.configure(state="normal")
         self.raw_text_widget.delete("1.0", tk.END)
-        self.raw_text_widget.insert("1.0", raw_text)
+        self.raw_text_widget.insert("1.0", record.get("raw_text", ""))
         self.raw_text_widget.configure(state="disabled")
 
         for key, entry in self.entries.items():
             entry.delete(0, tk.END)
             entry.insert(0, record["parsed"].get(key, ""))
+        self.loaded_fields = self.read_fields()
+
+        attention = self.show_question(record["warnings"])
+        self.show_candidates(record.get("candidates", []))
 
         self.window.deiconify()
         self.window.lift()
         self.content_canvas.yview_moveto(0)
+        if attention:
+            entry = self.entries[attention[0]]
+            entry.focus_set()
+            entry.icursor(tk.END)
 
         self.show_image()
         self.update_review_count()
@@ -2078,7 +2378,7 @@ class ReviewWindow:
         # nothing was found on the shop, and does so using the varenavn
         # (the OCR'd/human-corrected name), not the MK-varenummer.
         parsed = self.record["parsed"]
-        url = parsed.get("url", "")
+        url = (self.selected_candidate or {}).get("url") or parsed.get("url", "")
         if not url:
             search_value = (
                 parsed.get("varenavn")
@@ -2127,7 +2427,7 @@ class ReviewWindow:
         try:
             width = max(self.image_frame.winfo_width() - 24, 100)
             height = max(self.image_frame.winfo_height() - 24, 100)
-            image = (self.working_image or self.original_image).copy()
+            image = self.display_base().copy()
             if self.rotation_angle:
                 # Shrink the thumbnail target first so the live-rotated
                 # preview (whose bounding box grows once it's off a right
@@ -2170,6 +2470,18 @@ class ReviewWindow:
                 fill="white",
             )
 
+    def display_base(self):
+        """The image as shown before rotation: the photo (or its edited
+        copy), cut down to the label area while zoomed in."""
+        image = self.working_image or self.original_image
+        if self.zoomed and self.zoom_box:
+            width, height = image.size
+            left, top, right, bottom = self.zoom_box
+            image = image.crop((
+                round(left * width), round(top * height), round(right * width), round(bottom * height)
+            ))
+        return image
+
     def read_fields(self):
         values = {}
         for key, widget in self.entries.items():
@@ -2180,7 +2492,36 @@ class ReviewWindow:
         return values
 
     def confirm(self):
-        self.record["parsed"].update(self.read_fields())
+        """Save the fields (and a picked suggestion's link) and move on.
+        Asks first when the answer still looks unfinished."""
+        if self.record is None:
+            return
+        fields = self.read_fields()
+        fields["stand"] = fields["stand"].upper()
+        if fields["stand"] not in VALID_STANDS and not messagebox.askyesno(
+            "Tjek STAND",
+            (f"STAND står som \"{fields['stand']}\"." if fields["stand"] else "Der står ingen STAND.")
+            + " Den skal normalt være A, B eller C.\n\nGodkend alligevel?",
+            parent=self.window,
+        ):
+            return
+        is_box_part = bool(box_part(fields["mk_varenummer"], fields["varenavn"]) or self.record["parsed"].get("part"))
+        if (
+            self.candidates
+            and self.selected_candidate is None
+            and not fields["price"]
+            and not is_box_part
+            and not messagebox.askyesno(
+                "Ingen vare valgt",
+                "Du har ikke valgt en vare fra hjemmesiden, så der er ingen pris.\n\nGodkend alligevel?",
+                parent=self.window,
+            )
+        ):
+            return
+        self.record["parsed"].update(fields)
+        if self.selected_candidate is not None:
+            self.record["parsed"]["url"] = self.selected_candidate["url"]
+        self.record["candidates"] = []
         self.record["warnings"] = []
         record = self.record
         self.record = None
@@ -2210,6 +2551,10 @@ class ReviewWindow:
         self.working_image = self.working_image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         self.record["working_image"] = self.working_image
         self.pending_crop_fraction = None
+        # The label area no longer matches the mirrored photo
+        self.zoom_box = None
+        self.zoomed = False
+        self.update_zoom_button()
         self.resize_image()
 
     def build_edited_image(self):
@@ -2218,7 +2563,9 @@ class ReviewWindow:
         only place a real full-resolution rotate happens - everything
         interactive (dragging the slider, dragging a crop box) works off a
         cheap thumbnail and scale-independent fractions instead."""
-        image = self.working_image or self.original_image
+        # A crop drawn while zoomed in is relative to the zoomed view; with
+        # no crop, the whole photo is re-read (the zoom is only for viewing)
+        image = self.display_base() if self.pending_crop_fraction else (self.working_image or self.original_image)
         if self.rotation_angle:
             image = image.rotate(
                 -self.rotation_angle,
@@ -2323,12 +2670,23 @@ class ReviewWindow:
         self.working_image = None
         self.record.pop("working_image", None)
         self.pending_crop_fraction = None
+        self.zoom_box = self.record["parsed"].get("label_box")
+        self.zoomed = self.zoom_box is not None
+        self.update_zoom_button()
         self.rotation_angle = 0.0
         self.rotation_slider.set(0)
         self.rotation_label.configure(text="0°")
         self.resize_image()
 
     def retry(self):
+        if self.record is None:
+            return
+        if self.fields_changed() and not messagebox.askokcancel(
+            "Læs billedet igen?",
+            "Dine rettelser i felterne bliver overskrevet, når billedet læses igen.",
+            parent=self.window,
+        ):
+            return
         record = self.record
         working_image = self.build_edited_image().copy()
         self.record = None
@@ -2343,6 +2701,19 @@ class ReviewWindow:
         self.app.retry_review(record, working_image, standalone=standalone)
 
     def skip(self):
+        """Move on without saving - but never silently throw away edits:
+        if any field was changed, ask whether to keep them."""
+        if self.fields_changed():
+            answer = messagebox.askyesnocancel(
+                "Gem ændringerne?",
+                "Du har rettet i felterne. Vil du gemme ændringerne?",
+                parent=self.window,
+            )
+            if answer is None:
+                return
+            if answer:
+                self.confirm()
+                return
         record = self.record
         self.record = None
         if self.standalone:
@@ -2351,161 +2722,49 @@ class ReviewWindow:
             return
         self.app.review_finished(record, None)
 
-def normalize_label_varenavn(varenavn):
-    # Treat × and x as the same, as a display standard (not just for matching)
-    varenavn = varenavn.replace("×", "x")
+@dataclass
+class TextBlock:
+    """One block of OCR'd text (a line or a paragraph) and where it sits in
+    the photo, in pixels from the top-left corner."""
 
-    varenavn = PIPE_RE.sub(" | ", varenavn).strip()
+    text: str
+    left: float
+    top: float
+    right: float
+    bottom: float
 
-    if "bord" in varenavn.casefold():
-        varenavn = DIAMETER_DIGITS_RE.sub(r"Ø\1", varenavn)
+    @property
+    def width(self):
+        return self.right - self.left
 
-    return varenavn
+    @property
+    def height(self):
+        return self.bottom - self.top
 
+    @property
+    def center_x(self):
+        return (self.left + self.right) / 2
 
-def parse_label_fields(text):
-    """Extract mk_varenummer/varenavn/mk_ordrenr/stand from OCR'd label text.
-
-    Tries the strict pattern (both OUTLET and STAND keywords present)
-    first. If that fails - e.g. one keyword was misread - falls back to
-    independently-anchored patterns so fields anchored on the keyword
-    that *did* read correctly are still recovered, rather than returning
-    nothing at all.
-    """
-    parsed_label = {
-        "mk_varenummer": "",
-        "varenavn": "",
-        "mk_ordrenr": "",
-        "stand": "",
-    }
-    partial_match_used = False
-
-    strict_match = STRICT_LABEL_RE.search(text)
-    if strict_match:
-        parsed_label.update(
-            {key: value.strip() for key, value in strict_match.groupdict().items()}
-        )
-    else:
-        partial_match_used = True
-        varenavn_pair_match = VARENAVN_PAIR_RE.search(text)
-        if varenavn_pair_match:
-            parsed_label["mk_varenummer"] = varenavn_pair_match["mk_varenummer"].strip()
-            parsed_label["varenavn"] = varenavn_pair_match["varenavn"].strip()
-
-        mk_ordrenr_stand_match = MK_ORDRENR_STAND_RE.search(text)
-        if mk_ordrenr_stand_match:
-            parsed_label["mk_ordrenr"] = mk_ordrenr_stand_match["mk_ordrenr"].strip()
-            parsed_label["stand"] = mk_ordrenr_stand_match["stand"].strip()
-        else:
-            stand_only_match = STAND_ONLY_RE.search(text)
-            if stand_only_match:
-                parsed_label["stand"] = stand_only_match["stand"].strip()
-
-    if parsed_label["stand"]:
-        parsed_label["stand"] = parsed_label["stand"].upper()
-    if parsed_label["varenavn"]:
-        parsed_label["varenavn"] = normalize_label_varenavn(parsed_label["varenavn"])
-
-    return parsed_label, partial_match_used
+    @property
+    def center_y(self):
+        return (self.top + self.bottom) / 2
 
 
-def find_label_box(image):
-    """Locate the white paper label in a photo and return its bounding box
-    (x1, y1, x2, y2) in `image`'s own pixel coordinates, padded a little so
-    no edge text gets clipped - or None if nothing label-like was found.
+def load_label_photo(image_path):
+    """The photo as upright RGB, no larger than MAX_IMAGE_SIDE.
 
-    Photos often contain other text besides the label (a second sticker,
-    printing on the box), which OCR happily reads and which then confuses
-    parse_label_fields(). Cropping to the label first removes that noise,
-    and as a bonus makes OCR ~20% faster, as there's less image to scan.
-
-    The label is reliably the region that is both bright AND colourless:
-    beige fabric and grey plastic are unsaturated but dimmer, cardboard is
-    bright-ish but brown. So each pixel gets a "whiteness" score of
-    brightness minus twice the saturation. No single cutoff on that score
-    works for every photo, though - too strict and a whiter stray sticker
-    beats a slightly shadowed label, too loose and shrink-wrap glare or
-    pale fabric merges into the label's blob. So several cutoffs are tried
-    and the best label-shaped blob from any of them wins: large, solid
-    (convex - a label seen at an angle is a trapezoid, not a rectangle, so
-    solidity rather than rectangle-fit is the main shape test), and
-    preferably not cut off by the photo's edge, since the label being
-    photographed is normally fully in frame while stray stickers often
-    aren't. Verified against the sample photos in img-in/, including one
-    with a second white sticker next to the label."""
-    width, height = image.size
-    scale = LABEL_DETECT_SIDE / max(width, height)
-    small = image.resize(
-        (max(1, round(width * scale)), max(1, round(height * scale))),
-        Image.Resampling.BILINEAR,
-    )
-    hsv = cv2.cvtColor(np.asarray(small), cv2.COLOR_RGB2HSV).astype(np.int16)
-    whiteness = np.clip(hsv[..., 2] - 2 * hsv[..., 1], 0, 255).astype(np.uint8)
-    # Median blur erases fabric speckle and thin text strokes
-    whiteness = cv2.medianBlur(whiteness, 5)
-    whitest = float(np.percentile(whiteness, 99))
-    small_height, small_width = whiteness.shape
-    total_area = small_height * small_width
-    kernel_size = max(3, LABEL_DETECT_SIDE // 50)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
-
-    best_box, best_score = None, 0.0
-    for fraction in (0.9, 0.8, 0.7, 0.6, 0.5):
-        mask = (whiteness >= whitest * fraction).astype(np.uint8) * 255
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)  # fill in the text
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)  # drop thin glare
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if not 0.02 * total_area <= area <= 0.85 * total_area:
-                continue
-            _, (rect_width, rect_height), _ = cv2.minAreaRect(contour)
-            solidity = area / max(cv2.contourArea(cv2.convexHull(contour)), 1.0)
-            rect_fill = area / max(rect_width * rect_height, 1.0)
-            aspect = min(rect_width, rect_height) / max(rect_width, rect_height, 1.0)
-            if solidity < 0.93 or rect_fill < 0.7 or aspect < 0.25:
-                continue
-            x, y, box_width, box_height = cv2.boundingRect(contour)
-            score = area * solidity
-            if (
-                x <= 1
-                or y <= 1
-                or x + box_width >= small_width - 1
-                or y + box_height >= small_height - 1
-            ):
-                score *= 0.5
-            if score > best_score:
-                best_box, best_score = (x, y, box_width, box_height), score
-
-    if best_box is None:
-        return None
-    x, y, box_width, box_height = best_box
-    padding = 0.05 * max(box_width, box_height)
-    return (
-        max(0, round((x - padding) / scale)),
-        max(0, round((y - padding) / scale)),
-        min(width, round((x + box_width + padding) / scale)),
-        min(height, round((y + box_height + padding) / scale)),
-    )
-
-
-def ocr_image(converter, image_path):
-    """OCR one image file with Docling and return its text on one line."""
-    result = converter.convert(str(image_path))
-    text_parts = [item.text for item in result.document.texts if item.text]
-    text = " ".join(text_parts)
-    if not text:
-        text = result.document.export_to_markdown()
-    if not text_parts:
-        text = IMAGE_COMMENT_RE.sub(" ", text)
-        text = HEADING_RE.sub(" ", text)
-    return WHITESPACE_RE.sub(" ", text).strip()
-
-
-def label_read_quality(parsed_label, partial_match_used):
-    """Sort key for comparing two reads of the same label: more fields
-    found wins, and a strict (non-partial) match breaks ties."""
-    return (sum(1 for value in parsed_label.values() if value), not partial_match_used)
+    Phone photos (HEIC and plain JPEG alike) very commonly store pixels
+    "sideways" plus an EXIF Orientation tag rather than upright pixels -
+    ReviewWindow.show_image() corrects for this before *displaying* a
+    photo (via the identical ImageOps.exif_transpose() call), and Docling
+    opens images with plain PIL.Image.open(...).convert("RGB") and never
+    looks at EXIF, so it has to happen here before OCR as well - otherwise
+    a rotated-by-EXIF label gets OCR'd sideways or upside down while
+    looking perfectly upright in the review window."""
+    with Image.open(image_path) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+    image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE), Image.Resampling.LANCZOS)
+    return image
 
 
 def save_temporary_png(image, temporary_paths):
@@ -2517,6 +2776,202 @@ def save_temporary_png(image, temporary_paths):
     return temporary_path
 
 
+def read_text_blocks(converter, image_path):
+    """OCR one image with Docling, as TextBlocks in Docling's own order."""
+    document = converter.convert(str(image_path)).document
+    page = next(iter(document.pages.values()), None)
+    blocks = []
+    for item in document.texts:
+        text = WHITESPACE_RE.sub(" ", item.text or "").strip()
+        if not text or not item.prov:
+            continue
+        box = item.prov[0].bbox
+        if page is not None:
+            box = box.to_top_left_origin(page.size.height)
+        blocks.append(TextBlock(text, box.l, box.t, box.r, box.b))
+    return blocks
+
+
+def label_blocks_in_reading_order(blocks):
+    """Only the text blocks that belong to the label, in the order the
+    label's lines are meant to be read.
+
+    Photos often contain other text next to the label - a second sticker,
+    a shipping label, printing on the box, handwriting - which used to end
+    up inside the parsed fields. And Docling's own block order sometimes
+    puts "OUTLET" before the product name, which breaks parsing too.
+
+    Labels are printed with every line centred, so the label is found by
+    starting from the block(s) containing OUTLET/STAND and growing outward
+    to blocks that are (a) close to the label along the direction its lines
+    advance and (b) centred on the same axis. A sticker right next to the
+    label fails (b); text further down the box fails (a).
+
+    A label photographed sideways is read by the OCR line by line just
+    fine - only the order comes out wrong - so the same logic runs with the
+    axes swapped instead of re-reading a rotated copy of the photo. The
+    direction (which end is the first line) follows from STAND coming after
+    OUTLET, or OUTLET coming after the item number.
+
+    Falls back to all blocks in Docling's order when there is no OUTLET or
+    STAND to anchor on."""
+    anchors = [block for block in blocks if LABEL_ANCHOR_RE.search(block.text)]
+    if not anchors:
+        return blocks
+    sideways = sum(1 for block in anchors if block.height > block.width) * 2 > len(anchors)
+
+    def along(block):  # position in the direction the label's lines advance
+        return block.center_x if sideways else block.center_y
+
+    def along_span(block):
+        return (block.left, block.right) if sideways else (block.top, block.bottom)
+
+    def across(block):  # position along a line
+        return block.center_y if sideways else block.center_x
+
+    def across_size(block):
+        return block.height if sideways else block.width
+
+    axis = sum(across(block) for block in anchors) / len(anchors)
+    line_size = min(along_span(block)[1] - along_span(block)[0] for block in anchors)
+    label = list(anchors)
+    added = True
+    while added:
+        added = False
+        start = min(along_span(block)[0] for block in label)
+        end = max(along_span(block)[1] for block in label)
+        label_width = max(across_size(block) for block in label)
+        for block in blocks:
+            if block in label:
+                continue
+            low, high = along_span(block)
+            gap = max(low - end, start - high, 0)
+            off_axis = abs(across(block) - axis)
+            if gap <= 2 * line_size and off_axis <= 0.2 * max(label_width, across_size(block)):
+                label.append(block)
+                added = True
+
+    outlet = next((block for block in label if OUTLET_RE.search(block.text)), None)
+    stand = next((block for block in label if STAND_RE.search(block.text)), None)
+    number = next(
+        (block for block in label if LABEL_NUMBER_RE.search(block.text) and block not in (outlet, stand)),
+        None,
+    )
+    if outlet is not None and stand is not None and outlet is not stand:
+        direction = 1 if along(stand) > along(outlet) else -1
+    elif number is not None:
+        direction = 1 if along(outlet or stand) > along(number) else -1
+    else:
+        direction = -1 if sideways else 1
+
+    def reading_position(block):
+        low, high = along_span(block)
+        return low if direction == 1 else -high
+
+    return sorted(label, key=reading_position)
+
+
+def label_area(label_blocks, image_size):
+    """The label's area as fractions (left, top, right, bottom) of the
+    photo, with a margin around its text - the review window zooms in on
+    this. Fractions, so they apply to the full-resolution photo too."""
+    width, height = image_size
+    left = min(block.left for block in label_blocks)
+    top = min(block.top for block in label_blocks)
+    right = max(block.right for block in label_blocks)
+    bottom = max(block.bottom for block in label_blocks)
+    margin = 0.35 * max(right - left, bottom - top)
+    return (
+        max(0.0, (left - margin) / width),
+        max(0.0, (top - margin) / height),
+        min(1.0, (right + margin) / width),
+        min(1.0, (bottom + margin) / height),
+    )
+
+
+def clean_varenavn(varenavn):
+    varenavn = varenavn.replace("×", "x")
+    varenavn = PIPE_RE.sub(" | ", varenavn)
+    varenavn = DIAMETER_DIGITS_RE.sub(r"Ø\1", varenavn)
+    return WHITESPACE_RE.sub(" ", varenavn).strip(" ,|-")
+
+
+def box_part(mk_varenummer, varenavn):
+    """"1/2" when the label marks the item as one box of several - in the
+    number ("101338_1/2") or at the start of the name ("1/2 Vega ...")."""
+    match = BOX_PART_SUFFIX_RE.search((mk_varenummer or "").strip()) or BOX_PART_PREFIX_RE.search(
+        (varenavn or "").strip()
+    )
+    return match["part"] if match else ""
+
+
+def parse_label_fields(text):
+    """Split a label's text (lines in reading order, see
+    label_blocks_in_reading_order) into its fields:
+
+        <number>, <name> OUTLET <order number> STAND: <A/B/C>
+
+    Returns (fields, keywords_missing) - keywords_missing is True when
+    OUTLET or STAND wasn't found, so the split is less certain. Fields
+    that couldn't be read are left empty. The raw STAND value is kept even
+    if it isn't A/B/C (e.g. "AP"), so the user sees what the label says."""
+    parsed_label = {
+        "mk_varenummer": "",
+        "varenavn": "",
+        "mk_ordrenr": "",
+        "stand": "",
+        "part": "",
+    }
+    outlet = OUTLET_RE.search(text)
+    stand = STAND_RE.search(text)
+    header_end = min(
+        [match.start() for match in (outlet, stand) if match is not None] or [len(text)]
+    )
+    header = text[:header_end].strip()
+
+    number = LABEL_NUMBER_RE.search(header)
+    if number:
+        parsed_label["mk_varenummer"] = WHITESPACE_RE.sub(" ", number["number"])
+        # Anything before the number is either stray text or (rarely) a
+        # line read out of order - the name normally follows the number
+        after = header[number.end():].strip()
+        name = after or header[:number.start()]
+    else:
+        name = header
+    parsed_label["varenavn"] = clean_varenavn(name)
+
+    if outlet is not None:
+        order_end = stand.start() if stand is not None and stand.start() > outlet.end() else len(text)
+        parsed_label["mk_ordrenr"] = DIGIT_GROUP_DOT_RE.sub("", text[outlet.end():order_end].strip(" ,:"))
+    if stand is not None and stand["stand"]:
+        parsed_label["stand"] = stand["stand"].upper()
+
+    parsed_label["part"] = box_part(parsed_label["mk_varenummer"], parsed_label["varenavn"])
+    return parsed_label, outlet is None or stand is None
+
+
+def label_warnings(parsed_label, keywords_missing):
+    """Warnings about the label text itself (the webshop lookup adds its own)."""
+    warnings = [
+        ("missing", f"Kunne ikke læse {label}")
+        for key, label in MISSING_FIELD_NAMES.items()
+        if not parsed_label[key]
+    ]
+    if keywords_missing:
+        warnings.append(("partial", "Fandt ikke både OUTLET og STAND på labelen"))
+    if parsed_label["stand"] and parsed_label["stand"] not in VALID_STANDS:
+        warnings.append(("suspicious", f"Usædvanlig STAND på labelen: \"{parsed_label['stand']}\""))
+    if parsed_label["mk_ordrenr"] and len(parsed_label["mk_ordrenr"].split()) > 4:
+        warnings.append(("suspicious", "Mistænkelig tekst før MK-ordrenummer"))
+    if parsed_label["part"]:
+        warnings.append((
+            "part",
+            f"Delvis vare (kolli {parsed_label['part']}) - der sættes ingen pris. "
+            "Tjek at labelen er læst rigtigt.",
+        ))
+    return warnings
+
+
 def extract_label(converter, image_path, session, cache, cache_lock):
     """Called from up to OCR_WORKERS worker threads at once, all sharing
     one DocumentConverter instance (see process_in_background) - verified
@@ -2524,112 +2979,36 @@ def extract_label(converter, image_path, session, cache, cache_lock):
     diffing the extracted text against a single-threaded run (identical
     output, no exceptions, real wall-clock speedup - consistent with the
     torch/RapidOCR backend releasing the GIL during inference)."""
-    conversion_path = image_path
     temporary_paths = []
-
     try:
-        with Image.open(image_path) as opened:
-            # Phone photos (HEIC and plain JPEG alike) very commonly store
-            # pixels "sideways" plus an EXIF Orientation tag rather than
-            # upright pixels - ReviewWindow.show_image() already corrects
-            # for this before *displaying* a photo (via the identical
-            # ImageOps.exif_transpose() call), but nothing did the same
-            # before *OCR-ing* it. Docling opens images with plain
-            # PIL.Image.open(...).convert("RGB") and never looks at EXIF,
-            # so a rotated-by-EXIF label used to get OCR'd sideways or
-            # upside down - silently read as "no text found" here while
-            # looking perfectly upright and legible in the review window,
-            # with nothing to explain why.
-            orientation = opened.getexif().get(ExifTags.Base.Orientation, 1)
-            needs_orientation_fix = orientation not in (1, None)
-            image = ImageOps.exif_transpose(opened) if needs_orientation_fix else opened
-            needs_conversion = (
-                needs_orientation_fix
-                or image_path.suffix.lower() in {".heic", ".heif"}
-                or max(image.size) > MAX_IMAGE_SIDE
-            )
-            image = image.convert("RGB")
-            if needs_conversion:
-                image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE), Image.Resampling.LANCZOS)
-            label_box = find_label_box(image)
-            crop_path = save_temporary_png(image.crop(label_box), temporary_paths) if label_box else None
-            if needs_conversion:
-                conversion_path = save_temporary_png(image, temporary_paths)
+        image = load_label_photo(image_path)
+        blocks = read_text_blocks(converter, save_temporary_png(image, temporary_paths))
+        label_blocks = label_blocks_in_reading_order(blocks)
+        ignored = [block.text for block in blocks if block not in label_blocks]
+        if ignored:
+            debug_log(f"{image_path.name}: ignored text outside the label: {ignored}")
+        text = " ".join(block.text for block in label_blocks)
 
-        if crop_path is not None:
-            text = ocr_image(converter, crop_path)
-            parsed_label, partial_match_used = parse_label_fields(text)
-            # Safety net: if the crop read is missing any field, the
-            # detector may have picked the wrong white region or clipped
-            # the label - OCR the whole photo as well and keep whichever
-            # read is better. Photos whose crop reads cleanly pay nothing
-            # extra.
-            if not all(parsed_label.values()):
-                full_text = ocr_image(converter, conversion_path)
-                full_parsed, full_partial = parse_label_fields(full_text)
-                use_full = label_read_quality(full_parsed, full_partial) > label_read_quality(
-                    parsed_label, partial_match_used
-                )
-                debug_log(
-                    f"{image_path.name}: crop read incomplete, full photo read "
-                    f"{'was better - using it' if use_full else 'no better - keeping crop'}"
-                )
-                if use_full:
-                    text, parsed_label, partial_match_used = full_text, full_parsed, full_partial
-        else:
-            debug_log(f"{image_path.name}: no label found to crop to, reading whole photo")
-            text = ocr_image(converter, conversion_path)
-            parsed_label, partial_match_used = parse_label_fields(text)
+        parsed_label, keywords_missing = parse_label_fields(text)
+        if label_blocks is not blocks and label_blocks:
+            parsed_label["label_box"] = label_area(label_blocks, image.size)
+        warnings = label_warnings(parsed_label, keywords_missing)
 
-        warning_names = {
-            "mk_varenummer": "MK-varenummeret",
-            "varenavn": "varenavnet",
-            "mk_ordrenr": "MK-ordrenummeret",
-            "stand": "standen",
-        }
-        warnings = [
-            ("missing", f"Kunne ikke læse {label}")
-            for key, label in warning_names.items()
-            if not parsed_label[key]
-        ]
-        if partial_match_used:
-            warnings.append(
-                ("partial", "Delvis label-genkendelse (ikke alle nøgleord fundet samtidigt)")
-            )
-        mk_varenummer = parsed_label["mk_varenummer"]
-        if mk_varenummer and (
-            not re.search(r"\d", mk_varenummer)
-            or len(mk_varenummer) > 40
-            or len(mk_varenummer.split()) > 6
-        ):
-            warnings.append(("suspicious", "Mistænkeligt MK-varenummer"))
-        if parsed_label["mk_ordrenr"] and len(parsed_label["mk_ordrenr"].split()) > 4:
-            warnings.append(("suspicious", "Mistænkelig tekst før MK-ordrenummer"))
         shop_result, shop_warnings = lookup_shop_price(
             session,
             cache,
             cache_lock,
             parsed_label["mk_varenummer"],
-            parsed_label["mk_ordrenr"],
             parsed_label["varenavn"],
+            parsed_label["part"],
         )
-        warnings.extend(("shop", message) for message in shop_warnings)
+        warnings.extend(shop_warnings)
         if shop_result["varenavn"]:
             # A confident shop match wins over the raw OCR text - it's the
-            # shop's own canonical name, and it's the only "name" field
-            # left (there's no separate website_name any more), so this is
-            # what both the review window and the export end up showing.
+            # shop's own canonical name, and it's what both the review
+            # window and the export end up showing.
             parsed_label["varenavn"] = shop_result["varenavn"]
-            parsed_label["price"] = format_combined_price(shop_result["price"], shop_result["compare_price"])
-        elif shop_result["default_price"]:
-            # No exact variant matched, but this product's own variants
-            # agree closely enough on a price to offer it as a starting
-            # point - always clearly marked as a guess, never silently
-            # treated as a confirmed price, and never guessed across
-            # products (see estimate_default_price).
-            parsed_label["price"] = format_default_price_note(shop_result["default_price"])
-        else:
-            parsed_label["price"] = format_combined_price(shop_result["price"], shop_result["compare_price"])
+        parsed_label["price"] = format_combined_price(shop_result["price"], shop_result["compare_price"])
         parsed_label["compare_price"] = shop_result["compare_price"]
         parsed_label["url"] = shop_result["url"]
         return text, parsed_label, warnings, shop_result["candidates"]
