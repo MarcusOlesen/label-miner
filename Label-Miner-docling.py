@@ -2471,6 +2471,11 @@ class ReviewWindow:
                 # how the photo actually looks.
                 corrected = ImageOps.exif_transpose(opened)
                 self.original_image = corrected.convert("RGB")
+            # A sideways label was read turned upright (see extract_label) -
+            # show it that way, which is also what label_box refers to
+            turn = self.record["parsed"].get("photo_turn", 0)
+            if turn:
+                self.original_image = self.original_image.rotate(turn, expand=True)
             self.working_image = self.record.get("working_image")
             self.resize_image()
         except Exception as error:
@@ -2843,24 +2848,56 @@ def save_temporary_png(image, temporary_paths):
 
 
 def read_text_blocks(converter, image_path):
-    """OCR one image with Docling, as TextBlocks in Docling's own order."""
+    """OCR one image with Docling, as TextBlocks in Docling's own order.
+
+    One Docling text item can be several pieces of text from different
+    places in the photo, merged: it then has one `prov` entry per piece,
+    each with its own box and a `charspan` saying which characters of the
+    item's text are in it. Each piece becomes its own TextBlock here.
+    (Using only the first box for the whole item once put the entire label
+    of IMG_0277 at the position of a 2-letter scrap of packaging text: the
+    zoom showed that scrap, and the packaging text was read as part of the
+    label.)"""
     document = converter.convert(str(image_path)).document
     page = next(iter(document.pages.values()), None)
     blocks = []
     for item in document.texts:
-        text = WHITESPACE_RE.sub(" ", item.text or "").strip()
-        if not text or not item.prov:
+        if not item.text or not item.prov:
             continue
-        box = item.prov[0].bbox
-        if page is not None:
-            box = box.to_top_left_origin(page.size.height)
-        blocks.append(TextBlock(text, box.l, box.t, box.r, box.b))
+        pieces = [(item.text, item.prov[0].bbox)]
+        if len(item.prov) > 1:
+            pieces = [
+                (item.text[prov.charspan[0]:prov.charspan[1]], prov.bbox)
+                for prov in item.prov
+            ]
+        for piece_text, box in pieces:
+            text = WHITESPACE_RE.sub(" ", piece_text).strip()
+            if not text:
+                continue
+            if page is not None:
+                box = box.to_top_left_origin(page.size.height)
+            blocks.append(TextBlock(text, box.l, box.t, box.r, box.b))
     return blocks
 
 
+def estimated_line_height(block, along_span):
+    """Height of one line of text in `block` (in the direction lines
+    advance). A block can hold several lines - IMG_0277's whole label is a
+    single block - so its full height is often far more than a line.
+    Estimated from how much area its characters fill: with this font a
+    character is about half a line high wide, and lines fill roughly 70 %
+    of the block's width, so area ≈ chars × 0.55 h × h / 0.7."""
+    low, high = along_span(block)
+    extent = high - low
+    area_estimate = (1.27 * block.width * block.height / max(len(block.text), 1)) ** 0.5
+    return min(extent, area_estimate)
+
+
 def label_blocks_in_reading_order(blocks):
-    """Only the text blocks that belong to the label, in the order the
-    label's lines are meant to be read.
+    """(label_blocks, turn): only the text blocks that belong to the
+    label, in the order the label's lines are meant to be read - and, for
+    a label photographed sideways, the rotation (degrees, PIL's
+    counter-clockwise convention) that turns the photo upright, else 0.
 
     Photos often contain other text next to the label - a second sticker,
     a shipping label, printing on the box, handwriting - which used to end
@@ -2879,12 +2916,25 @@ def label_blocks_in_reading_order(blocks):
     direction (which end is the first line) follows from STAND coming after
     OUTLET, or OUTLET coming after the item number.
 
+    Ordering is only as good as the blocks, though: Docling sometimes
+    merges several sideways lines into one block with the lines in the
+    wrong order inside it (IMG_0285), which no reordering can fix. So
+    extract_label re-reads a sideways photo turned upright (see `turn`).
+
     Falls back to all blocks in Docling's order when there is no OUTLET or
     STAND to anchor on."""
     anchors = [block for block in blocks if LABEL_ANCHOR_RE.search(block.text)]
     if not anchors:
-        return blocks
-    sideways = sum(1 for block in anchors if block.height > block.width) * 2 > len(anchors)
+        return blocks, 0
+    # Orientation is judged only from short, single-line anchors ("OUTLET",
+    # "STAND: B"), which are much taller than wide when sideways. A block
+    # holding several lines can be any shape (IMG_9168's whole upright
+    # label is one block, slightly taller than wide) - with no short
+    # anchor the label is taken to be upright, the normal case.
+    single_lines = [block for block in anchors if len(block.text) <= 15]
+    sideways = bool(single_lines) and (
+        sum(1 for block in single_lines if block.height > block.width) * 2 > len(single_lines)
+    )
 
     def along(block):  # position in the direction the label's lines advance
         return block.center_x if sideways else block.center_y
@@ -2899,7 +2949,7 @@ def label_blocks_in_reading_order(blocks):
         return block.height if sideways else block.width
 
     axis = sum(across(block) for block in anchors) / len(anchors)
-    line_size = min(along_span(block)[1] - along_span(block)[0] for block in anchors)
+    line_size = min(estimated_line_height(block, along_span) for block in anchors)
     label = list(anchors)
     added = True
     while added:
@@ -2934,26 +2984,21 @@ def label_blocks_in_reading_order(blocks):
         low, high = along_span(block)
         return low if direction == 1 else -high
 
-    return sorted(label, key=reading_position)
+    # Sideways text whose lines advance to the left was turned clockwise -
+    # turn it back counter-clockwise (+90), and the other way round
+    turn = (90 if direction == -1 else -90) if sideways else 0
+    return sorted(label, key=reading_position), turn
 
 
 def label_area(label_blocks, image_size):
     """The label's area as fractions (left, top, right, bottom) of the
     photo, with a margin around its text - the review window zooms in on
-    this. Fractions, so they apply to the full-resolution photo too.
-
-    None when the position can't be right: Docling sometimes merges the
-    label with stray text into one block and gives that block a tiny,
-    wrong box (IMG_0277: 118 characters in 2 % x 1 % of the photo). The
-    text is still fine, only the position isn't - so no zoom then. Real
-    labels in the test photos are at least ~20 % of the photo each way."""
+    this. Fractions, so they apply to the full-resolution photo too."""
     width, height = image_size
     left = min(block.left for block in label_blocks)
     top = min(block.top for block in label_blocks)
     right = max(block.right for block in label_blocks)
     bottom = max(block.bottom for block in label_blocks)
-    if (right - left) < 0.10 * width or (bottom - top) < 0.08 * height:
-        return None
     margin = 0.35 * max(right - left, bottom - top)
     return (
         max(0.0, (left - margin) / width),
@@ -3064,17 +3109,30 @@ def extract_label(converter, image_path, session, cache, cache_lock):
     try:
         image = load_label_photo(image_path)
         blocks = read_text_blocks(converter, save_temporary_png(image, temporary_paths))
-        label_blocks = label_blocks_in_reading_order(blocks)
+        label_blocks, turn = label_blocks_in_reading_order(blocks)
+        if turn:
+            # A sideways label: read it again upright. Costs one extra OCR,
+            # only for these photos (typically 1-2 in 30) - see
+            # label_blocks_in_reading_order for why ordering alone isn't enough.
+            upright = image.rotate(turn, expand=True)
+            upright_blocks = read_text_blocks(converter, save_temporary_png(upright, temporary_paths))
+            upright_label, _ = label_blocks_in_reading_order(upright_blocks)
+            if upright_label is not upright_blocks:  # found OUTLET/STAND
+                debug_log(f"{image_path.name}: sideways label, re-read turned {turn} degrees")
+                image, blocks, label_blocks = upright, upright_blocks, upright_label
+            else:
+                turn = 0
         ignored = [block.text for block in blocks if block not in label_blocks]
         if ignored:
             debug_log(f"{image_path.name}: ignored text outside the label: {ignored}")
         text = " ".join(block.text for block in label_blocks)
 
         parsed_label, keywords_missing = parse_label_fields(text)
+        # The review window shows the photo turned the same way, so the
+        # label is upright there too (and label_box matches it)
+        parsed_label["photo_turn"] = turn
         if label_blocks is not blocks and label_blocks:
-            area = label_area(label_blocks, image.size)
-            if area is not None:
-                parsed_label["label_box"] = area
+            parsed_label["label_box"] = label_area(label_blocks, image.size)
         warnings = label_warnings(parsed_label, keywords_missing)
 
         shop_result, shop_warnings = lookup_shop_price(
