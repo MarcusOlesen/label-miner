@@ -230,8 +230,8 @@ GOOGLE_DRIVE_ZIP_SUFFIX_RE = re.compile(r"-\d{8}T\d{6}Z-\d+-\d+$")
 #     OUTLET
 #     <order number>
 #     STAND: <A/B/C>
-# The number is either an MK item number, possibly marked as one box of
-# several ("101338_1/2"), or a supplier code ("UE 45990201", "LI 600200049",
+# The number is either an MK item number, possibly marked as only part of
+# the item ("101338_1/2"), or a supplier code ("UE 45990201", "LI 600200049",
 # "AY H000017492", "VN 19987-330" - the "-330" belongs to the code, it is
 # not the separator before the name). Supplier codes have 7+ digits or a
 # dash, so stray capitals in front of an MK number (box print read as
@@ -248,9 +248,10 @@ OUTLET_RE = re.compile(r"\bOUTLET\b", flags=re.IGNORECASE)
 STAND_RE = re.compile(r"\bSTAND\b\s*:?\s*(?P<stand>[A-Z]{1,3}\b)?", flags=re.IGNORECASE)
 LABEL_ANCHOR_RE = re.compile(r"\b(?:OUTLET|STAND)\b", flags=re.IGNORECASE)
 VALID_STANDS = {"A", "B", "C"}
-# One box of a product shipped in several: "101338_1/2" / "1/2 Vega ..."
-BOX_PART_SUFFIX_RE = re.compile(r"_(?P<part>\d+/\d+)$")
-BOX_PART_PREFIX_RE = re.compile(r"^(?P<part>\d+/\d+)\s+")
+# Only part of an item: "101338_1/2" / "1/2 Vega ..." = part 1 of 2. The
+# other parts may come separately - or not at all.
+PART_SUFFIX_RE = re.compile(r"_(?P<part>\d+/\d+)$")
+PART_PREFIX_RE = re.compile(r"^(?P<part>\d+/\d+)\s+")
 # A quantity tag at the end of the name: "... Naturflet - 1 stk."
 STK_TAG_RE = re.compile(r"\s*-?\s*\b\d+\s*stk\b\.?\s*$", flags=re.IGNORECASE)
 
@@ -346,8 +347,10 @@ def review_question(warnings, part=""):
         }
     if "part" in by_category:
         return {
-            "title": f"Delvis vare (kolli {part})" if part else "Delvis vare",
-            "detail": "Varen er sendt i flere kasser, så den får ingen pris. "
+            "title": f"Delvis vare (del {part})" if part else "Delvis vare",
+            "detail": (f"Labelen siger, at det kun er en del af varen (del {part})" if part
+                       else "Labelen siger, at det kun er en del af varen")
+            + " – resten kommer ikke nødvendigvis. Der sættes ingen pris. "
             "Tjek at nummer og navn er læst rigtigt.",
             "fields": ["mk_varenummer", "varenavn"],
             "others": [
@@ -405,9 +408,9 @@ def format_duration(seconds):
 def name_tokens(name):
     """The words used to compare a label's product name with a webshop
     name: lowercase, punctuation and "|" dropped, × read as x, and without
-    a "- 6 stk." quantity tag or a "1/2 " box-part prefix - those are on the
+    a "- 6 stk." quantity tag or a "1/2 " part prefix - those are on the
     label but never in the shop's name."""
-    name = BOX_PART_PREFIX_RE.sub("", (name or "").strip())
+    name = PART_PREFIX_RE.sub("", (name or "").strip())
     name = STK_TAG_RE.sub("", name)
     name = DEFAULT_TITLE_RE.sub("", name).replace("×", "x")
     return [token for token in re.split(r"[^\w]+", name.casefold()) if token]
@@ -620,7 +623,8 @@ def lookup_shop_price(session, cache, cache_lock, mk_varenummer, varenavn, part=
     Fills in varenavn/price/url only when it is safe to do so without
     anyone looking: the product was found via the label's own number,
     exactly one variant contains every word of the label's name, and the
-    item isn't one box of several (`part`, those never get a price).
+    item isn't marked as only part of the item (`part`, those never get
+    a price).
     Everything else returns `candidates` for the user to choose from, plus a
     warning that says what to check:
 
@@ -635,7 +639,7 @@ def lookup_shop_price(session, cache, cache_lock, mk_varenummer, varenavn, part=
     SHOP_WARNING_CATEGORIES."""
     result = {"varenavn": "", "price": "", "compare_price": "", "url": "", "candidates": []}
     label_tokens = name_tokens(varenavn)
-    number = BOX_PART_SUFFIX_RE.sub("", (mk_varenummer or "").strip())
+    number = PART_SUFFIX_RE.sub("", (mk_varenummer or "").strip())
     if not number and not label_tokens:
         return result, [("shop", "Kan ikke søge på hjemmesiden uden varenummer eller varenavn")]
 
@@ -650,7 +654,7 @@ def lookup_shop_price(session, cache, cache_lock, mk_varenummer, varenavn, part=
         winner = clear_winner(ranked)
         if winner is not None:
             if part:
-                # Identified, but a box part never gets a price - offer it
+                # Identified, but a part never gets a price - offer it
                 # so the user can confirm with one click
                 result["candidates"] = [{**winner, "found_by": "nummer"}]
                 return result, []
@@ -2166,7 +2170,7 @@ class ReviewWindow:
             text="Klik på den vare der passer til labelen. Klik igen for at fortryde.",
             foreground=COLOR_MUTED,
         ).grid(row=1, column=0, sticky="w", pady=(0, 6))
-        is_box_part = bool(self.record and self.record["parsed"].get("part"))
+        is_part = bool(self.record and self.record["parsed"].get("part"))
         for index, candidate in enumerate(self.candidates):
             card = tk.Frame(
                 self.choices_frame,
@@ -2191,7 +2195,7 @@ class ReviewWindow:
             )
             name.grid(row=0, column=1, sticky="sw", pady=(8, 0))
             price = candidate["price"] or "ingen pris"
-            if is_box_part:
+            if is_part:
                 price = "delvis vare – ingen pris"
             found_by = candidate.get("found_by")
             details = price + (f"   ·   fundet via {found_by}" if found_by else "")
@@ -2255,7 +2259,7 @@ class ReviewWindow:
         mark it chosen - or, if it was already chosen, undo that and put
         back what the label said. Nothing is written to the record until
         "Godkend" (see confirm) - skipping after picking leaves the record
-        as it was. A box part (kolli 1/2 etc.) never gets a price, not even
+        as it was. A part of an item (1/2 etc.) never gets a price, not even
         here: its comment field keeps the "OBS: delvis vare" note."""
         candidate = self.candidates[index]
         if candidate is self.selected_candidate:
@@ -2267,14 +2271,14 @@ class ReviewWindow:
             # Checked before the name is replaced: the part marker may only
             # be in the label's name ("2/2 Vega ..."), never in the shop's
             fields = self.read_fields()
-            part = box_part(fields["mk_varenummer"], fields["varenavn"]) or (
+            part = item_part(fields["mk_varenummer"], fields["varenavn"]) or (
                 self.record["parsed"].get("part", "") if self.record is not None else ""
             )
             self.entries["varenavn"].delete(0, tk.END)
             self.entries["varenavn"].insert(0, candidate["name"])
             self.entries["price"].delete(0, tk.END)
             if part:
-                self.entries["price"].insert(0, box_part_note(part))
+                self.entries["price"].insert(0, part_note(part))
             else:
                 self.entries["price"].insert(
                     0, format_combined_price(candidate["price"], candidate["compare_price"])
@@ -2334,7 +2338,7 @@ class ReviewWindow:
             self.app.price_cache_lock,
             fields["mk_varenummer"],
             fields["varenavn"],
-            box_part(fields["mk_varenummer"], fields["varenavn"]),
+            item_part(fields["mk_varenummer"], fields["varenavn"]),
         )
         self.window.after(0, self._apply_price_refresh, target_record, shop_result, shop_warnings)
 
@@ -2350,10 +2354,10 @@ class ReviewWindow:
         target_record["parsed"]["price"] = format_combined_price(
             shop_result["price"], shop_result["compare_price"]
         )
-        part = box_part(target_record["parsed"].get("mk_varenummer", ""), target_record["parsed"].get("varenavn", ""))
+        part = item_part(target_record["parsed"].get("mk_varenummer", ""), target_record["parsed"].get("varenavn", ""))
         part = part or target_record["parsed"].get("part", "")
         if part:
-            target_record["parsed"]["price"] = box_part_note(part)
+            target_record["parsed"]["price"] = part_note(part)
         target_record["parsed"]["compare_price"] = shop_result["compare_price"]
         target_record["parsed"]["url"] = shop_result["url"]
         target_record["candidates"] = shop_result["candidates"]
@@ -2576,12 +2580,12 @@ class ReviewWindow:
             parent=self.window,
         ):
             return
-        is_box_part = bool(box_part(fields["mk_varenummer"], fields["varenavn"]) or self.record["parsed"].get("part"))
+        is_part = bool(item_part(fields["mk_varenummer"], fields["varenavn"]) or self.record["parsed"].get("part"))
         if (
             self.candidates
             and self.selected_candidate is None
             and not fields["price"]
-            and not is_box_part
+            and not is_part
             and not messagebox.askyesno(
                 "Ingen vare valgt",
                 "Du har ikke valgt en vare fra hjemmesiden, så der er ingen pris.\n\nGodkend alligevel?",
@@ -3015,17 +3019,17 @@ def clean_varenavn(varenavn):
     return WHITESPACE_RE.sub(" ", varenavn).strip(" ,|-")
 
 
-def box_part_note(part):
-    """Put in the price/comment field of a box part instead of a price, so
+def part_note(part):
+    """Put in the price/comment field of a part of an item instead of a price, so
     the export still says so even if the "1/2" disappears from the name
     (e.g. when the user picks the shop's name for it)."""
-    return f"OBS: delvis vare (kolli {part})"
+    return f"OBS: delvis vare (del {part})"
 
 
-def box_part(mk_varenummer, varenavn):
-    """"1/2" when the label marks the item as one box of several - in the
+def item_part(mk_varenummer, varenavn):
+    """"1/2" when the label marks the item as only part of it - in the
     number ("101338_1/2") or at the start of the name ("1/2 Vega ...")."""
-    match = BOX_PART_SUFFIX_RE.search((mk_varenummer or "").strip()) or BOX_PART_PREFIX_RE.search(
+    match = PART_SUFFIX_RE.search((mk_varenummer or "").strip()) or PART_PREFIX_RE.search(
         (varenavn or "").strip()
     )
     return match["part"] if match else ""
@@ -3072,7 +3076,7 @@ def parse_label_fields(text):
     if stand is not None and stand["stand"]:
         parsed_label["stand"] = stand["stand"].upper()
 
-    parsed_label["part"] = box_part(parsed_label["mk_varenummer"], parsed_label["varenavn"])
+    parsed_label["part"] = item_part(parsed_label["mk_varenummer"], parsed_label["varenavn"])
     return parsed_label, outlet is None or stand is None
 
 
@@ -3092,7 +3096,7 @@ def label_warnings(parsed_label, keywords_missing):
     if parsed_label["part"]:
         warnings.append((
             "part",
-            f"Delvis vare (kolli {parsed_label['part']}) - der sættes ingen pris. "
+            f"Delvis vare (del {parsed_label['part']}) - der sættes ingen pris. "
             "Tjek at labelen er læst rigtigt.",
         ))
     return warnings
@@ -3151,7 +3155,7 @@ def extract_label(converter, image_path, session, cache, cache_lock):
             parsed_label["varenavn"] = shop_result["varenavn"]
         parsed_label["price"] = format_combined_price(shop_result["price"], shop_result["compare_price"])
         if parsed_label["part"]:
-            parsed_label["price"] = box_part_note(parsed_label["part"])
+            parsed_label["price"] = part_note(parsed_label["part"])
         parsed_label["compare_price"] = shop_result["compare_price"]
         parsed_label["url"] = shop_result["url"]
         return text, parsed_label, warnings, shop_result["candidates"]
