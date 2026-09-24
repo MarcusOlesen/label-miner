@@ -348,10 +348,7 @@ def review_question(warnings, part=""):
     if "part" in by_category:
         return {
             "title": f"Delvis vare (del {part})" if part else "Delvis vare",
-            "detail": (f"Labelen siger, at det kun er en del af varen (del {part})" if part
-                       else "Labelen siger, at det kun er en del af varen")
-            + " – resten kommer ikke nødvendigvis. Der sættes ingen pris. "
-            "Tjek at nummer og navn er læst rigtigt.",
+            "detail": "Kun en del af varen – der sættes ingen pris. Tjek nummer og navn.",
             "fields": ["mk_varenummer", "varenavn"],
             "others": [
                 message for category, message in warnings
