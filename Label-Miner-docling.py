@@ -944,6 +944,24 @@ class DoclingImageMiner:
             foreground=COLOR_MUTED,
         ).pack(anchor="w", pady=(4, 0))
 
+        # Shown whenever there are labels waiting for review - the review
+        # window only opens when the user asks for it, instead of popping up in
+        # the middle of whatever they're looking at (see check_review_queue).
+        self.review_bar = ttk.Frame(self.work_frame)
+        self.review_button = ttk.Button(
+            self.review_bar,
+            text="🔍  Gennemse labels",
+            command=self.open_review,
+            style=accent_button_style(),
+        )
+        self.review_button.pack(side="left")
+        ttk.Label(
+            self.review_bar,
+            text="Nogle labels skal tjekkes, før de kan eksporteres.",
+            foreground=COLOR_WARNING,
+        ).pack(side="left", padx=(12, 0))
+        self.review_bar_visible = False
+
         # Result list: one row per processed image (filename / status /
         # short summary) instead of a raw text+JSON dump - the full raw
         # OCR text and parsed JSON are only ever shown where a decision is
@@ -1315,11 +1333,12 @@ class DoclingImageMiner:
         summary = self._summary_for_record(parsed_label, raw_text)
         iid = str(path)
         values = (path.name, status_text, summary)
+        # No .see() - the list must not scroll away from whatever row is
+        # being read while new results come in
         if self.results_tree.exists(iid):
             self.results_tree.item(iid, values=values, tags=(tag,))
         else:
             self.results_tree.insert("", tk.END, iid=iid, values=values, tags=(tag,))
-        self.results_tree.see(iid)
 
     def complete_work_unit(self, duration):
         self.work_completed += 1
@@ -1359,7 +1378,7 @@ class DoclingImageMiner:
     def processing_finished(self):
         self.processing = False
         if self.review_total:
-            self.status.set("Behandling færdig. Godkend eller spring de resterende gennemgange over.")
+            self.status.set("Behandling færdig. Tryk \"Gennemse labels\" for at tjekke de sidste labels.")
             self.maybe_enable_export_controls()
         else:
             self.status.set("Færdig. Klar til eksport.")
@@ -1388,41 +1407,49 @@ class DoclingImageMiner:
         self.progress.configure(mode="determinate")
 
     def check_review_queue(self):
-        # This reschedules itself every 100ms for the app's whole
-        # lifetime - it's the only thing that ever pops review_queue for
-        # the live (non-standalone) flow. Before this try/finally, an
-        # exception anywhere in this body (say, a corrupt image blowing up
-        # ReviewWindow's construction) would skip the self.root.after()
-        # call below and permanently stop the queue from being drained for
-        # the rest of the session - install_error_reporting's dialog would
-        # still fire (report_callback_exception catches it same as any
-        # other Tk callback), but nothing about that dialog signals "and
-        # also every review from now on will silently never pop up",
-        # which is exactly what would happen next. The reschedule is now
-        # guaranteed regardless; the error still surfaces the normal way.
-        record = None
+        """Runs every 200 ms for the app's whole lifetime: keeps the
+        "Gennemse labels (N)" button in step with how many labels are
+        waiting. It never opens the review window by itself - that only
+        happens when the button is pressed (open_review). Wrapped in
+        try/finally so one error can't stop the polling for the rest of
+        the session."""
         try:
-            if self.review_window is None:
-                record = self._pop_next_review_record()
-                if record is not None:
-                    self.review_window = ReviewWindow(self, record)
-                    record = None
-            elif self.review_window.record is None:
-                record = self._pop_next_review_record()
-                if record is not None:
-                    self.review_window.load_record(record)
-                    record = None
-            else:
+            pending = self.review_total - self.review_completed
+            if pending > 0:
+                self.review_button.configure(text=f"🔍  Gennemse labels ({pending})")
+                if not self.review_bar_visible:
+                    self.review_bar.pack(fill="x", pady=(0, 12), before=self.results_frame)
+                    self.review_bar_visible = True
+            elif self.review_bar_visible:
+                self.review_bar.pack_forget()
+                self.review_bar_visible = False
+            if self.review_window is not None and self.review_window.record is not None:
                 self.review_window.update_review_count()
         finally:
-            if record is not None:
-                # Popped off review_queue but never actually handed to a
-                # ReviewWindow because something above raised - put it
-                # back rather than losing it, which would otherwise leave
-                # review_total permanently one item ahead of
-                # review_completed and export controls stuck disabled.
-                self.review_queue.put(record)
-            self.root.after(100, self.check_review_queue)
+            self.root.after(200, self.check_review_queue)
+
+    def open_review(self):
+        """"Gennemse labels": show the review window - on the item it was
+        closed on, if any, otherwise on the next one in the queue."""
+        if self.review_window is not None and self.review_window.record is not None:
+            self.review_window.show()
+            return
+        record = self._pop_next_review_record()
+        if record is None:
+            self.status.set("Ingen labels venter lige nu - de dukker op, når de er læst.")
+            return
+        try:
+            if self.review_window is None:
+                self.review_window = ReviewWindow(self, record)
+            else:
+                self.review_window.load_record(record)
+            self.review_window.show()
+        except Exception:
+            # Don't let a record vanish from the queue just because showing
+            # it blew up - put it back so the button can try again, instead
+            # of leaving review_total stuck one ahead of review_completed.
+            self.review_queue.put(record)
+            raise
 
     def _pop_next_review_record(self):
         try:
@@ -1466,7 +1493,12 @@ class DoclingImageMiner:
             (r for r in self.records if r is not None and str(r["path"]) == row_id),
             None,
         )
-        if record is None or record.get("review_pending"):
+        if record is None:
+            return
+        if record.get("review_pending"):
+            # Still waiting in the batch review - open that instead of a
+            # second editor on the same record
+            self.open_review()
             return
         if self.review_window is not None and self.review_window.record is record:
             self.review_window.window.deiconify()
@@ -1761,9 +1793,20 @@ class ReviewWindow:
         self.record = None
         self.window = tk.Toplevel(app.root)
         self.window.title("Rediger label" if standalone else "Label-gennemgang")
-        self.window.geometry("1180x760")
-        self.window.minsize(980, 640)
-        self.window.protocol("WM_DELETE_WINDOW", self.skip)
+        # Centred, and never bigger than the screen (laptops, 125-150 %
+        # display scaling)
+        screen_width = self.window.winfo_screenwidth()
+        screen_height = self.window.winfo_screenheight()
+        width = min(1180, screen_width - 60)
+        height = min(800, screen_height - 100)
+        x = max((screen_width - width) // 2, 0)
+        y = max((screen_height - height) // 2 - 20, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+        self.window.minsize(min(980, width), min(640, height))
+        # ✕ on the batch review just closes the window - the item stays
+        # where it was (edits included) and "Gennemse labels" on the main
+        # window brings it back. On a reopened row it means "Luk".
+        self.window.protocol("WM_DELETE_WINDOW", self.skip if standalone else self.close_window)
         set_window_icon(self.window)
 
         # Rotation fill and canvas backdrop share this color so the border
@@ -2120,7 +2163,7 @@ class ReviewWindow:
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
             self.choices_frame,
-            text="Klik på den vare der passer til labelen.",
+            text="Klik på den vare der passer til labelen. Klik igen for at fortryde.",
             foreground=COLOR_MUTED,
         ).grid(row=1, column=0, sticky="w", pady=(0, 6))
         is_box_part = bool(self.record and self.record["parsed"].get("part"))
@@ -2209,27 +2252,36 @@ class ReviewWindow:
 
     def select_candidate(self, index):
         """A card was clicked: fill the name and price fields from it and
-        mark it chosen. Nothing is written to the record until "Godkend"
-        (see confirm) - skipping after picking leaves the record as it was.
-        A box part (kolli 1/2 etc.) never gets a price, not even here."""
+        mark it chosen - or, if it was already chosen, undo that and put
+        back what the label said. Nothing is written to the record until
+        "Godkend" (see confirm) - skipping after picking leaves the record
+        as it was. A box part (kolli 1/2 etc.) never gets a price, not even
+        here: its comment field keeps the "OBS: delvis vare" note."""
         candidate = self.candidates[index]
-        # Checked before the name is replaced: the part marker may only be
-        # in the label's name ("2/2 Vega ..."), never in the shop's
-        fields = self.read_fields()
-        is_box_part = bool(
-            box_part(fields["mk_varenummer"], fields["varenavn"])
-            or (self.record is not None and self.record["parsed"].get("part"))
-        )
-        self.entries["varenavn"].delete(0, tk.END)
-        self.entries["varenavn"].insert(0, candidate["name"])
-        self.entries["price"].delete(0, tk.END)
-        if not is_box_part:
-            self.entries["price"].insert(
-                0, format_combined_price(candidate["price"], candidate["compare_price"])
+        if candidate is self.selected_candidate:
+            self.selected_candidate = None
+            for key in ("varenavn", "price"):
+                self.entries[key].delete(0, tk.END)
+                self.entries[key].insert(0, self.loaded_fields.get(key, ""))
+        else:
+            # Checked before the name is replaced: the part marker may only
+            # be in the label's name ("2/2 Vega ..."), never in the shop's
+            fields = self.read_fields()
+            part = box_part(fields["mk_varenummer"], fields["varenavn"]) or (
+                self.record["parsed"].get("part", "") if self.record is not None else ""
             )
-        self.selected_candidate = candidate
-        for card_index, card in enumerate(self.candidate_cards):
-            chosen = card_index == index
+            self.entries["varenavn"].delete(0, tk.END)
+            self.entries["varenavn"].insert(0, candidate["name"])
+            self.entries["price"].delete(0, tk.END)
+            if part:
+                self.entries["price"].insert(0, box_part_note(part))
+            else:
+                self.entries["price"].insert(
+                    0, format_combined_price(candidate["price"], candidate["compare_price"])
+                )
+            self.selected_candidate = candidate
+        for card, shown in zip(self.candidate_cards, self.candidates):
+            chosen = shown is self.selected_candidate
             card["frame"].configure(highlightbackground=COLOR_OK if chosen else self.card_border)
             card["check"].configure(text="✓" if chosen else "")
 
@@ -2298,6 +2350,10 @@ class ReviewWindow:
         target_record["parsed"]["price"] = format_combined_price(
             shop_result["price"], shop_result["compare_price"]
         )
+        part = box_part(target_record["parsed"].get("mk_varenummer", ""), target_record["parsed"].get("varenavn", ""))
+        part = part or target_record["parsed"].get("part", "")
+        if part:
+            target_record["parsed"]["price"] = box_part_note(part)
         target_record["parsed"]["compare_price"] = shop_result["compare_price"]
         target_record["parsed"]["url"] = shop_result["url"]
         target_record["candidates"] = shop_result["candidates"]
@@ -2371,6 +2427,16 @@ class ReviewWindow:
     def hide(self):
         self.record = None
         self.window.withdraw()
+
+    def close_window(self):
+        """✕ on the batch review: hide, but keep the current item and any
+        typed edits, to continue later via "Gennemse labels"."""
+        self.window.withdraw()
+
+    def show(self):
+        self.window.deiconify()
+        self.window.lift()
+        self.window.focus_force()
 
     def open_website(self):
         # `url` is set as soon as a product was found at all - matched
@@ -2874,12 +2940,20 @@ def label_blocks_in_reading_order(blocks):
 def label_area(label_blocks, image_size):
     """The label's area as fractions (left, top, right, bottom) of the
     photo, with a margin around its text - the review window zooms in on
-    this. Fractions, so they apply to the full-resolution photo too."""
+    this. Fractions, so they apply to the full-resolution photo too.
+
+    None when the position can't be right: Docling sometimes merges the
+    label with stray text into one block and gives that block a tiny,
+    wrong box (IMG_0277: 118 characters in 2 % x 1 % of the photo). The
+    text is still fine, only the position isn't - so no zoom then. Real
+    labels in the test photos are at least ~20 % of the photo each way."""
     width, height = image_size
     left = min(block.left for block in label_blocks)
     top = min(block.top for block in label_blocks)
     right = max(block.right for block in label_blocks)
     bottom = max(block.bottom for block in label_blocks)
+    if (right - left) < 0.10 * width or (bottom - top) < 0.08 * height:
+        return None
     margin = 0.35 * max(right - left, bottom - top)
     return (
         max(0.0, (left - margin) / width),
@@ -2894,6 +2968,13 @@ def clean_varenavn(varenavn):
     varenavn = PIPE_RE.sub(" | ", varenavn)
     varenavn = DIAMETER_DIGITS_RE.sub(r"Ø\1", varenavn)
     return WHITESPACE_RE.sub(" ", varenavn).strip(" ,|-")
+
+
+def box_part_note(part):
+    """Put in the price/comment field of a box part instead of a price, so
+    the export still says so even if the "1/2" disappears from the name
+    (e.g. when the user picks the shop's name for it)."""
+    return f"OBS: delvis vare (kolli {part})"
 
 
 def box_part(mk_varenummer, varenavn):
@@ -2991,7 +3072,9 @@ def extract_label(converter, image_path, session, cache, cache_lock):
 
         parsed_label, keywords_missing = parse_label_fields(text)
         if label_blocks is not blocks and label_blocks:
-            parsed_label["label_box"] = label_area(label_blocks, image.size)
+            area = label_area(label_blocks, image.size)
+            if area is not None:
+                parsed_label["label_box"] = area
         warnings = label_warnings(parsed_label, keywords_missing)
 
         shop_result, shop_warnings = lookup_shop_price(
@@ -3009,6 +3092,8 @@ def extract_label(converter, image_path, session, cache, cache_lock):
             # window and the export end up showing.
             parsed_label["varenavn"] = shop_result["varenavn"]
         parsed_label["price"] = format_combined_price(shop_result["price"], shop_result["compare_price"])
+        if parsed_label["part"]:
+            parsed_label["price"] = box_part_note(parsed_label["part"])
         parsed_label["compare_price"] = shop_result["compare_price"]
         parsed_label["url"] = shop_result["url"]
         return text, parsed_label, warnings, shop_result["candidates"]
