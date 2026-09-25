@@ -38,6 +38,9 @@ except ImportError:  # optional drag-and-drop dependency: pip install tkinterdnd
     TkinterDnD = None
 
 
+# Shown in the title bar; keep in sync with MyAppVersion in build/installer.iss
+APP_VERSION = "2.0"
+
 # Pass --debug on the command line (or when launching the frozen .exe from a
 # terminal) to see per-image raw OCR text/JSON and other diagnostics printed
 # to the console. Without it the program stays silent, which also avoids a
@@ -762,7 +765,7 @@ def unique_export_path(directory, base_name):
 class DoclingImageMiner:
     def __init__(self, root, theme_applied=True):
         self.root = root
-        self.root.title("Label Miner")
+        self.root.title(f"Label Miner {APP_VERSION}")
         self.center_window(860, 600)
         self.root.minsize(700, 480)
         set_window_icon(self.root)
@@ -1092,6 +1095,12 @@ class DoclingImageMiner:
         self.boot_frame.pack_forget()
         self.select_frame.pack(fill="both", expand=True)
         self.status.set("Docling er klar. Vælg billeder for at starte.")
+        # Photos or a zip dropped onto the program's desktop icon (or
+        # opened with it) arrive as command-line arguments - start on them
+        # right away, as if they'd been picked in the file dialog
+        startup_paths = [arg for arg in sys.argv[1:] if not arg.startswith("--") and Path(arg).exists()]
+        if startup_paths:
+            self.begin_processing(startup_paths)
 
     def loading_failed(self, error):
         self.loading = False
