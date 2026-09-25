@@ -39,7 +39,7 @@ except ImportError:  # optional drag-and-drop dependency: pip install tkinterdnd
 
 
 # Shown in the title bar; keep in sync with MyAppVersion in build/installer.iss
-APP_VERSION = "2.0"
+APP_VERSION = "2.0.1"
 
 # Pass --debug on the command line (or when launching the frozen .exe from a
 # terminal) to see per-image raw OCR text/JSON and other diagnostics printed
@@ -728,13 +728,73 @@ def derive_source_folder(image_files, extraction_root=None, zip_path=None):
     return datetime.now().strftime("%d-%m"), (common or Path.cwd())
 
 
+EXTRACT_DIR_PREFIX = "label_miner_"
+EXTRACT_OWNER_FILE = "owner.pid"
+# Folders from before the owner file existed (v1.0) are only removed once
+# they're this old - no Label Miner session lasts that long unnoticed
+UNMARKED_EXTRACT_DIR_MAX_AGE = 24 * 60 * 60
+
+
+def process_is_running(pid):
+    """True if a process with this id exists (Windows). A reused id counts
+    as running - that only means a leftover folder is kept a bit longer."""
+    import ctypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return False
+    try:
+        exit_code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return True
+        return exit_code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def clean_up_old_extract_dirs(temp_dir=None):
+    """Delete zip-extraction folders left behind by earlier Label Miner
+    sessions that didn't close normally (on_close removes its own).
+
+    Never touches a folder another running Label Miner is using: a
+    folder is removed only if the program that wrote its owner.pid is no
+    longer running - however old it is, since a batch can stay open for
+    days - or, for folders from before owner.pid existed, once it is more
+    than a day old. Runs on a background thread at startup; returns the
+    removed folders (for the log)."""
+    temp_dir = Path(temp_dir or tempfile.gettempdir())
+    removed = []
+    for folder in temp_dir.glob(f"{EXTRACT_DIR_PREFIX}*"):
+        if not folder.is_dir():
+            continue
+        owner_file = folder / EXTRACT_OWNER_FILE
+        try:
+            if owner_file.exists():
+                owner = int(owner_file.read_text(encoding="ascii").strip())
+                if owner == os.getpid() or process_is_running(owner):
+                    continue
+            elif time.time() - folder.stat().st_mtime < UNMARKED_EXTRACT_DIR_MAX_AGE:
+                continue
+        except (OSError, ValueError):
+            continue  # can't tell whose it is - leave it
+        shutil.rmtree(folder, ignore_errors=True)
+        removed.append(folder)
+    return removed
+
+
 def load_images_from_zip(zip_path):
     """Extract a Google-Drive-style folder zip to a temp directory and
     collect the supported images inside it, wherever they are nested.
     Returns (image_files, extract_dir) - the caller keeps extract_dir
     alive for the app's lifetime since images are re-opened by path
     throughout the review flow."""
-    extract_dir = Path(tempfile.mkdtemp(prefix="label_miner_"))
+    extract_dir = Path(tempfile.mkdtemp(prefix=EXTRACT_DIR_PREFIX))
+    # Marks the folder as this running program's, so another Label Miner
+    # starting up leaves it alone (see clean_up_old_extract_dirs)
+    (extract_dir / EXTRACT_OWNER_FILE).write_text(str(os.getpid()), encoding="ascii")
     with zipfile.ZipFile(zip_path) as archive:
         archive.extractall(extract_dir)
     image_files = sorted(
@@ -832,6 +892,14 @@ class DoclingImageMiner:
         self.root.after(100, self.check_review_queue)
         self.boot_progress.start(50)
         threading.Thread(target=self.load_docling, daemon=True).start()
+        threading.Thread(target=self._clean_up_old_extract_dirs, daemon=True).start()
+
+    def _clean_up_old_extract_dirs(self):
+        try:
+            for folder in clean_up_old_extract_dirs():
+                debug_log(f"Removed leftover temp folder {folder}")
+        except Exception as error:
+            debug_log(f"Cleaning up old temp folders failed: {error!r}")
 
     def center_window(self, width, height):
         self.root.update_idletasks()
