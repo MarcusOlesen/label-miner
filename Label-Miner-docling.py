@@ -39,7 +39,10 @@ except ImportError:  # optional drag-and-drop dependency: pip install tkinterdnd
 
 
 # Shown in the title bar; keep in sync with MyAppVersion in build/installer.iss
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1"
+# The user manual, built by build/manual/make_manual_miner.py. Installed
+# next to Label-Miner.exe; opened by the "? Hjælp" buttons.
+MANUAL_NAME = "Label-Miner-Vejledning.pdf"
 
 # Pass --debug on the command line (or when launching the frozen .exe from a
 # terminal) to see per-image raw OCR text/JSON and other diagnostics printed
@@ -53,6 +56,17 @@ def debug_log(*args, **kwargs):
     attached (sys.stdout is None on a windowed frozen build)."""
     if DEBUG and sys.stdout is not None:
         print(*args, **kwargs)
+
+
+def open_manual(parent=None):
+    """Open the PDF manual: next to the .exe when installed, next to the
+    script when run from source."""
+    for folder in (Path(sys.executable).parent, Path(__file__).resolve().parent):
+        manual = folder / MANUAL_NAME
+        if manual.exists():
+            os.startfile(manual)
+            return
+    messagebox.showinfo("Label Miner", f"Vejledningen ({MANUAL_NAME}) blev ikke fundet.", parent=parent)
 
 
 def resource_path(name):
@@ -966,6 +980,9 @@ class DoclingImageMiner:
             style=big_style,
         )
         self.select_button.pack()
+        ttk.Button(
+            self.select_frame, text="?  Hjælp", command=lambda: open_manual(self.root)
+        ).place(relx=1.0, rely=0.0, anchor="ne")
 
         drop_targets = [self.select_frame, center, self.select_button]
         if DND_FILES is not None:
@@ -997,11 +1014,12 @@ class DoclingImageMiner:
         header = ttk.Frame(self.work_frame)
         header.pack(fill="x")
         ttk.Label(header, text="Label Miner", font=("Segoe UI", 18, "bold")).pack(side="left")
+        ttk.Button(header, text="?  Hjælp", command=lambda: open_manual(self.root)).pack(side="right")
         ttk.Label(
             header,
             textvariable=self.selected_count,
             font=("Segoe UI", 11, "bold"),
-        ).pack(side="right")
+        ).pack(side="right", padx=(0, 16))
 
         # Progress row (bar + ETA text) is only shown while work is actually
         # happening - built here but not packed until update_progress_info
@@ -2064,6 +2082,9 @@ class ReviewWindow:
             ttk.Label(header, textvariable=self.review_count, foreground=COLOR_MUTED).grid(
                 row=0, column=1, sticky="e"
             )
+        ttk.Button(header, text="?  Hjælp", command=lambda: open_manual(self.window)).grid(
+            row=0, column=2, sticky="e", padx=(12, 0)
+        )
 
         # The question: a coloured box, the first thing the eye lands on
         self.question_frame = tk.Frame(
