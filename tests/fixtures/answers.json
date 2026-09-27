@@ -1,0 +1,195 @@
+{
+ "_about": "Verified answers for the fixture photos - see tests/test_regression.py and tests/harness.py.",
+ "24-9/IMG_0276.HEIC": {
+  "mk_varenummer": "106466",
+  "varenavn": "Sevilla U-sofa, venstrevendt Loop Mørk Beige",
+  "mk_ordrenr": "142415",
+  "stand": "B",
+  "shop": {
+   "handle": "sevilla-u-sofa-venstrevendt",
+   "variant": 55634555502969
+  },
+  "expect": "auto"
+ },
+ "15-9/IMG_9161.HEIC": {
+  "mk_varenummer": "100038",
+  "varenavn": "Lissabon XL 2 personers sofa Danubio Beige",
+  "mk_ordrenr": "121191",
+  "stand": "C",
+  "shop": {
+   "handle": "lissabon-xl-2-personers-sofa",
+   "variant": 46828536201553
+  },
+  "expect": "auto"
+ },
+ "24-9/IMG_0268.HEIC": {
+  "mk_varenummer": "101388",
+  "varenavn": "Marmoris spisebord, keramik | 200x100 Pandora/Hvid",
+  "mk_ordrenr": "148603",
+  "stand": "B",
+  "shop": {
+   "handle": "marmoris-keramik-spisebord-200x100-cm",
+   "variant": 48715946623313
+  },
+  "expect": "auto"
+ },
+ "24-9/IMG_0289.HEIC": {
+  "mk_varenummer": "103291",
+  "varenavn": "Leonora spisebordsstol, armlæn | Røget egetræ",
+  "mk_ordrenr": "150170",
+  "stand": "A",
+  "shop": {
+   "handle": "leonora-spisebordsstol-armlaen-roget-egetrae",
+   "variant": 54946691088761
+  },
+  "expect": "auto",
+  "note": "handwritten '6stk'"
+ },
+ "24-9/IMG_0280.HEIC": {
+  "mk_varenummer": "101385",
+  "varenavn": "Argilla sofabord, keramik | Ø80 Grå/Sort",
+  "mk_ordrenr": "148383",
+  "stand": "A",
+  "shop": {
+   "handle": "argilla-keramik-sofabord-o80-cm",
+   "variant": 48715798544721
+  },
+  "expect": "auto",
+  "note": "shipping label text next to it"
+ },
+ "24-9/IMG_0267.HEIC": {
+  "mk_varenummer": "106753",
+  "varenavn": "Vika spisebordsstol, egetræ | stof",
+  "mk_ordrenr": "143975",
+  "stand": "B",
+  "shop": {
+   "handle": "vika-spisebordsstol-egetrae-stof",
+   "variant": 56275795870073
+  },
+  "expect": "auto",
+  "note": "partly covered 'AFVENTER Manglende ordre nr.' sticker behind the label; user: ignore it"
+ },
+ "15-9/IMG_9164.HEIC": {
+  "mk_varenummer": "101420",
+  "varenavn": "Paris U-sofa, venstrevendt Modesto Brun",
+  "mk_ordrenr": "132197",
+  "stand": "B",
+  "shop": {
+   "handle": "paris-u-sofa-venstrevendt",
+   "variant": 48736200851793
+  },
+  "expect": "auto",
+  "note": "rotated label"
+ },
+ "24-9/IMG_0285.HEIC": {
+  "mk_varenummer": "103218_1/2",
+  "varenavn": "Vega sofabord, travertin marmor | 90x90",
+  "mk_ordrenr": "150837",
+  "stand": "B",
+  "shop": {
+   "handle": "vega-sofabord-travertin-marmor-90x90",
+   "variant": null
+  },
+  "expect": "review",
+  "reason": "box part",
+  "note": "rotated label"
+ },
+ "24-9/IMG_0302.HEIC": {
+  "mk_varenummer": "106258",
+  "varenavn": "Manhattan chaiselong sofa, venstrevendt Sneak Grå/Beige",
+  "mk_ordrenr": "149022",
+  "stand": "A",
+  "shop": {
+   "handle": "manhattan-chaiselong-sofa-venstrevendt",
+   "variant": 48565498216785
+  },
+  "expect": "review",
+  "reason": "number/name conflict",
+  "note": "106258 on the shop is Vetro sofabord"
+ },
+ "15-9/IMG_9167.HEIC": {
+  "mk_varenummer": "106839",
+  "varenavn": "Ground TV-stander Natur egetræ",
+  "mk_ordrenr": "150058",
+  "stand": "B",
+  "shop": {
+   "handle": "ground-tv-stander",
+   "variant": 56373377073529
+  },
+  "expect": "review",
+  "reason": "number/name conflict",
+  "note": "label number is wrong: 106839 = Frame TV-stander, Ground = 106836 (per user)"
+ },
+ "24-9/IMG_0283.HEIC": {
+  "mk_varenummer": "101338_1/2",
+  "varenavn": "1/2 Vega rundt marmor sofabord, latte, Ø90",
+  "mk_ordrenr": "135867",
+  "stand": "B",
+  "shop": {
+   "handle": "vega-rundt-marmor-sofabord-latte-o90",
+   "variant": 48240537895249
+  },
+  "expect": "review",
+  "reason": "box part"
+ },
+ "24-9/IMG_0292.HEIC": {
+  "mk_varenummer": "100718",
+  "varenavn": "Lissabon 2-Sitzer-Sofa Rebel Dunkelbeige",
+  "mk_ordrenr": "#DE 2021",
+  "stand": "B",
+  "shop": {
+   "handle": "lissabon-2-personers-sofa",
+   "variant": 48466917294417
+  },
+  "expect": "review",
+  "reason": "German label"
+ },
+ "24-9/IMG_0296.HEIC": {
+  "mk_varenummer": "103775",
+  "varenavn": "Bali chaiselong sofa, højrevendt Hygge Beige",
+  "mk_ordrenr": "143841",
+  "stand": "B",
+  "shop": null,
+  "expect": "review",
+  "reason": "not on shop",
+  "note": "name search returns *Cali* - must not be accepted"
+ },
+ "24-9/IMG_0275.HEIC": {
+  "mk_varenummer": "UE 45990201",
+  "varenavn": "Carno spisebord, Ø120",
+  "mk_ordrenr": "137017",
+  "stand": "A",
+  "shop": {
+   "handle": "carno-rundt-spisebord",
+   "variant": 49796203938129
+  },
+  "expect": "review",
+  "reason": "supplier number, found by name"
+ },
+ "24-9/IMG_0286.HEIC": {
+  "mk_varenummer": "102105",
+  "varenavn": "Venice 3 personers sovesofa, opbevaring - Aragon Beige",
+  "mk_ordrenr": "FRA LAGER",
+  "stand": "",
+  "shop": {
+   "handle": "venice-3-personers-sovesofa",
+   "variant": 49365501968721
+  },
+  "expect": "review",
+  "reason": "no STAND on label",
+  "note": "label has 'FRA LAGER' instead of an order number"
+ },
+ "15-9/IMG_9176.HEIC": {
+  "mk_varenummer": "AY H000022202",
+  "varenavn": "Vega sofabord, latte marmor | 90x90",
+  "mk_ordrenr": "135800",
+  "stand": "AP",
+  "shop": {
+   "handle": "vega-latte-marmor-sofabord-90x90",
+   "variant": 39646429315136
+  },
+  "expect": "review",
+  "reason": "odd STAND",
+  "note": "label prints 'STAND: AP'; sent to review, showing AP as printed"
+ }
+}
