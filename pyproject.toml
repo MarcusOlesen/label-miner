@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "label-miner"
+version = "2.1"
+description = "Reads price labels on photos of furniture, finds the products on the webshop and exports a spreadsheet."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Marcus Olesen" }]
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10",
+    "pillow-heif>=0.16",   # iPhone photos (HEIC)
+    "requests>=2.31",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+# The OCR engine. Heavy (PyTorch); not needed for the tests, which replay cached OCR results.
+ocr = ["docling>=2.50", "rapidocr>=3"]
+gui = ["sv-ttk>=2", "tkinterdnd2>=0.4"]
+dev = ["pytest>=8", "ruff>=0.6"]
+build = ["pyinstaller>=6"]
+
+[project.scripts]
+label-miner = "label_miner.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+label_miner = ["assets/*.ico"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+markers = ["gui: needs a display (Tkinter windows)"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

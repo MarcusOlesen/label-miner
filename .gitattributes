@@ -1,0 +1,13 @@
+* text=auto eol=lf
+# Windows tools read these; keep them CRLF
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+# Binary files
+*.png binary
+*.ico binary
+*.pdf binary
+*.HEIC binary
+*.heic binary
+*.jpg binary
+*.xlsx binary
+*.zip binary
