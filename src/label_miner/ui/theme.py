@@ -98,15 +98,14 @@ def accent_button_style():
 
 
 def install_error_reporting(root):
-    """By default, an exception raised inside a Tk callback (a button
-    command, a slider drag, a canvas event...) is swallowed - Tkinter just
-    prints a traceback that nobody sees once this is a --windowed exe with
-    no console attached, and the widget is left however that half-finished
-    callback left it. That's exactly what made a past bug here look like
-    "rotation does nothing, and now other buttons are broken too": the
-    real error was invisible. Route it to a visible error dialog instead,
-    on top of always logging it (debug_log so it's not printed when frozen
-    with no console)."""
+    """Show errors from Tk callbacks in a dialog.
+
+    Tkinter only prints a traceback when a callback (a button, a slider, a
+    canvas event) raises - which nobody sees in the windowed .exe, where
+    there is no console. The button would just seem to do nothing, and the
+    window could be left half-updated. The error is also written to the
+    debug log.
+    """
 
     def report(exc, value, tb):
         debug_log("".join(traceback.format_exception(exc, value, tb)))

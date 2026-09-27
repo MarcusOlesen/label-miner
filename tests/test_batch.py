@@ -13,6 +13,7 @@ from label_miner.batch import (
     EXTRACT_OWNER_FILE,
     clean_up_old_extract_dirs,
     derive_source_folder,
+    excel_rows,
     format_duration,
     load_images_from_zip,
     unique_export_path,
@@ -87,3 +88,29 @@ def test_unique_export_path_never_overwrites(tmp_path):
 @pytest.mark.parametrize(("seconds", "text"), [(5, "5 sek"), (125, "2 min 5 sek"), (3720, "1 t 2 min")])
 def test_format_duration(seconds, text):
     assert format_duration(seconds) == text
+
+
+def record(name, number="", order="", stand="", price="", warnings=()):
+    parsed = {"varenavn": "Vega sofa", "mk_varenummer": number, "mk_ordrenr": order, "stand": stand}
+    parsed["price"] = price
+    return {"path": Path(name), "parsed": parsed, "warnings": list(warnings)}
+
+
+def test_excel_rows_groups_photos_of_the_same_item():
+    records = [
+        record("IMG_1.HEIC", "101338", "200101", "A", "8.999 kr"),
+        record("IMG_2.HEIC", "101338", "200101", "A", "8.999 kr"),
+        record("IMG_3.HEIC", "101338", "200102", "A"),
+        # Unreadable photos are never merged, as they can't be told apart
+        record("IMG_4.HEIC"),
+        record("IMG_5.HEIC", warnings=[("missing", "Kunne ikke læse standen")]),
+    ]
+    rows = excel_rows(records, "24-9")
+
+    assert rows[0][0] == "24-9"
+    items = rows[1:]
+    assert [row[5] for row in items] == [2, 1, 1, 1]  # STK
+    assert items[0][11] == "IMG_1.HEIC, IMG_2.HEIC"
+    assert items[0][7] == "8.999 kr"
+    # A warning left on a record ends up in the comments column
+    assert items[3][7] == "Kunne ikke læse standen"

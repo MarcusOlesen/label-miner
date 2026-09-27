@@ -22,6 +22,7 @@ except ImportError:  # optional: drag and drop
 from ..batch import (
     clean_up_old_extract_dirs,
     derive_source_folder,
+    excel_rows,
     format_duration,
     load_images_from_zip,
     unique_export_path,
@@ -59,11 +60,8 @@ class LabelMinerApp:
         self.records = []
         self.converter = None
         self.http_session = requests.Session()
-        # Sized for OCR_WORKERS concurrent images each potentially making
-        # their own webshop request at once - default pool_maxsize is 10,
-        # which would silently throttle price lookups back to serial once
-        # more than 10 are in flight (e.g. during a fast batch with a lot
-        # of cache misses).
+        # Room for every OCR worker's webshop requests at once; requests'
+        # default pool of 10 connections would quietly make them wait.
         adapter = HTTPAdapter(pool_maxsize=max(OCR_WORKERS * 2, 10))
         self.http_session.mount("https://", adapter)
         self.http_session.mount("http://", adapter)
@@ -98,12 +96,10 @@ class LabelMinerApp:
         self.status = tk.StringVar(value="Indlæser Docling og dets modeller...")
         self.selected_count = tk.StringVar(value="Valgte billeder: 0")
 
-        # The window shows exactly one of three "screens" at a time - a
-        # boot screen while Docling's models load, a select screen with one
-        # big unmissable button once it's ready, and the work screen (results
-        # list + export/copy) once images are actually being processed -
-        # rather than one crowded window with disabled controls that don't
-        # explain why they're disabled.
+        # The window shows one of three "screens" at a time: a boot screen
+        # while Docling's models load, a select screen with one big button,
+        # and the work screen (results, export) while photos are processed -
+        # rather than one crowded window with unexplained disabled controls.
         self.screen_container = ttk.Frame(root, padding=24)
         self.screen_container.pack(fill="both", expand=True)
 
@@ -241,9 +237,9 @@ class LabelMinerApp:
             foreground=COLOR_MUTED,
         ).pack(anchor="w", pady=(4, 0))
 
-        # Shown whenever there are labels waiting for review - the review
-        # window only opens when the user asks for it, instead of popping up in
-        # the middle of whatever they're looking at (see check_review_queue).
+        # Shown whenever there are labels waiting for review. The review
+        # window only opens when the user asks for it, rather than popping
+        # up in the middle of something else (see check_review_queue).
         self.review_bar = ttk.Frame(self.work_frame)
         self.review_button = ttk.Button(
             self.review_bar,
@@ -452,9 +448,8 @@ class LabelMinerApp:
 
     def _extract_one(self, path):
         """Runs on a worker thread (see process_in_background). Exceptions
-        are caught here, not left to propagate through the future, so one
-        bad image can't abort the rest of the batch - matching the original
-        per-image try/except in the sequential loop this replaced."""
+        are caught here rather than left in the future, so one bad photo
+        can't stop the rest of the batch."""
         started_at = time.perf_counter()
         try:
             raw_text, parsed_label, warnings, candidates = extract_label(
@@ -781,71 +776,14 @@ class LabelMinerApp:
         self.export_ready_label.pack(anchor="w")
         self.actions_buttons.pack(anchor="w", pady=(6, 0))
 
-    def excel_rows(self):
-        rows = [[self.source_folder_name] + [""] * (len(EXCEL_COLUMNS) - 1)]
-
-        # Group records that represent the same physical item (identical MK
-        # Varenummer, MK ordrenr and STAND) into a single row, with STK set
-        # to how many copies were found. Records where all three fields are
-        # blank (e.g. failed OCR) are never merged with each other, since we
-        # can't actually tell whether they're the same item.
-        groups = {}
-        group_order = []
-        for record in self.records:
-            parsed = record["parsed"]
-            key = (
-                parsed.get("mk_varenummer", ""),
-                parsed.get("mk_ordrenr", ""),
-                parsed.get("stand", ""),
-            )
-            if not any(key):
-                key = ("__unique__", id(record))
-            if key not in groups:
-                groups[key] = {"first": record, "count": 0, "image_names": []}
-                group_order.append(key)
-            group = groups[key]
-            group["count"] += 1
-            group["image_names"].append(record["path"].name)
-
-        for key in group_order:
-            group = groups[key]
-            record = group["first"]
-            parsed = record["parsed"]
-            comments = parsed.get("price", "")
-            if record.get("warnings"):
-                warning_text = " | ".join(warning_messages(record["warnings"]))
-                comments = " | ".join(value for value in (comments, warning_text) if value)
-            rows.append(
-                [
-                    "",
-                    parsed.get("varenavn", ""),
-                    parsed.get("mk_varenummer", ""),
-                    parsed.get("mk_ordrenr", ""),
-                    parsed.get("stand", ""),
-                    group["count"],
-                    "X",
-                    comments,
-                    "",
-                    "",
-                    parsed.get("url", ""),
-                    ", ".join(group["image_names"]),
-                ]
-            )
-        return rows
-
     def auto_export_excel(self):
-        """Saves the Excel automatically as soon as there's nothing left to
-        review - no dialog, no button - and again any time a record's data
-        changes afterward (a standalone edit or rescan via
-        reopen_record_review, see ReviewWindow.confirm/retry_finished), so
-        the saved file never silently drifts out of date once you've
-        started relying on it.
+        """Save the spreadsheet as soon as nothing is left to review - no
+        dialog, no button - and again whenever a row changes afterwards
+        (see reopen_record_review), so the saved file never goes out of date.
 
-        self.export_path is resolved once (via unique_export_path, which
-        picks a name that doesn't collide with an existing file) and then
-        reused for every subsequent save, so re-running this overwrites
-        that same file in place instead of picking a new "(1)" name each
-        time the way a fresh unique_export_path() call would."""
+        The file name is picked once (unique_export_path never overwrites an
+        existing file) and then reused, so later saves update the same file
+        instead of creating "24-9 (1).xlsx", "24-9 (2).xlsx", ..."""
         if not self.records:
             return
         try:
@@ -854,7 +792,7 @@ class LabelMinerApp:
             workbook = Workbook()
             worksheet = workbook.active
             worksheet.title = "Label Miner"
-            rows = self.excel_rows()
+            rows = excel_rows(self.records, self.source_folder_name)
             worksheet.append(rows[0])
             worksheet.append(EXCEL_COLUMNS)
             for row in rows[1:]:
@@ -871,7 +809,7 @@ class LabelMinerApp:
         self.export_ready_label.configure(text=f"✅ Excel gemt: {self.export_path.name}", foreground=COLOR_OK)
 
     def copy_result(self):
-        rows = self.excel_rows()
+        rows = excel_rows(self.records, self.source_folder_name)
         values = ["\t".join(str(value) for value in row[: len(COPY_COLUMNS)]) for row in rows]
         self.root.clipboard_clear()
         self.root.clipboard_append("\n".join(values))
@@ -905,16 +843,10 @@ class LabelMinerApp:
         ).start()
 
     def retry_review_in_background(self, record, working_image):
-        """Only runs the OCR and reports the outcome back to the main
-        thread - never touches review_queue/review_total/review_pending
-        itself. All of that bookkeeping happens in retry_finished, on the
-        main thread, regardless of whether this came from the live review
-        queue or a standalone-reopened row (see reopen_record_review):
-        centralizing it there is what makes it safe for two retries to
-        finish around the same moment without racing on the shared
-        counters (the same class of bug previously fixed for
-        review_completed's plain +=, which briefly lived directly in this
-        background method)."""
+        """Run the OCR again on a worker thread and hand the result to the
+        main thread. The review counters (review_queue, review_total,
+        review_pending) are only ever changed in retry_finished, on the main
+        thread, so two retries finishing at once can't race on them."""
         temporary_paths = []
         started_at = time.perf_counter()
         try:

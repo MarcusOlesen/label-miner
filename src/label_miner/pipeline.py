@@ -1,5 +1,8 @@
 """One photo, end to end: read the label, parse it and look up the price."""
 
+from pathlib import Path
+from threading import Lock
+
 from .ocr import (
     label_area,
     label_blocks_in_reading_order,
@@ -13,22 +16,30 @@ from .shop import format_combined_price, lookup_shop_price
 from .util import debug_log
 
 
-def extract_label(converter, image_path, session, cache, cache_lock):
-    """Called from up to OCR_WORKERS worker threads at once, all sharing
-    one DocumentConverter instance (see process_in_background) - verified
-    safe by running it concurrently against a set of real label photos and
-    diffing the extracted text against a single-threaded run (identical
-    output, no exceptions, real wall-clock speedup - consistent with the
-    torch/RapidOCR backend releasing the GIL during inference)."""
+def extract_label(
+    converter, image_path: Path, session, cache: dict, cache_lock: Lock
+) -> tuple[str, dict, list[tuple[str, str]], list[dict]]:
+    """Read one label photo and find its product.
+
+    Returns (text, fields, warnings, candidates): the label's text, the
+    parsed fields plus price/url and a few display hints (photo_turn,
+    label_box), the warnings (none means approved automatically), and the
+    webshop products to offer in the review window.
+
+    ``converter`` is a Docling DocumentConverter (see ocr.create_converter)
+    and ``session`` a requests.Session; the tests pass recorded stand-ins.
+    Runs on up to OCR_WORKERS threads at once, sharing one converter and one
+    webshop cache (guarded by cache_lock).
+    """
     temporary_paths = []
     try:
         image = load_label_photo(image_path)
         blocks = read_text_blocks(converter, save_temporary_png(image, temporary_paths))
         label_blocks, turn = label_blocks_in_reading_order(blocks)
         if turn:
-            # A sideways label: read it again upright. Costs one extra OCR,
-            # only for these photos (typically 1-2 in 30) - see
-            # label_blocks_in_reading_order for why ordering alone isn't enough.
+            # A sideways label: read it again upright. One extra OCR, for
+            # these photos only (typically 1-2 in 30); see
+            # label_blocks_in_reading_order for why reordering isn't enough.
             upright = image.rotate(turn, expand=True)
             upright_blocks = read_text_blocks(converter, save_temporary_png(upright, temporary_paths))
             upright_label, _ = label_blocks_in_reading_order(upright_blocks)
@@ -60,9 +71,7 @@ def extract_label(converter, image_path, session, cache, cache_lock):
         )
         warnings.extend(shop_warnings)
         if shop_result["varenavn"]:
-            # A confident shop match wins over the raw OCR text - it's the
-            # shop's own canonical name, and it's what both the review
-            # window and the export end up showing.
+            # A certain match: use the shop's own name rather than the OCR text
             parsed_label["varenavn"] = shop_result["varenavn"]
         parsed_label["price"] = format_combined_price(shop_result["price"], shop_result["compare_price"])
         if parsed_label["part"]:

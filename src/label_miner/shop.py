@@ -1,20 +1,32 @@
-"""Finding a label's product on the webshop."""
+"""Finding a label's product on the webshop.
+
+The shop is a Shopify store; its public search (``/search/suggest.json``)
+and product (``/products/<handle>.js``) endpoints are used.
+
+The strategy is built around one rule: a price is only filled in when it is
+certain. The product is searched by the label's number; the result counts
+only if exactly one of its variants contains every word of the label's name.
+Everything else becomes a question for the user, with the likely products
+offered as choices.
+"""
 
 import difflib
 import re
+from threading import Lock
 
 from .config import SHOP_URL
 from .parsing import PART_PREFIX_RE, PART_SUFFIX_RE, STK_TAG_RE
 
+Candidate = dict  # {name, price, compare_price, id, url, image[, found_by]}
+
 DEFAULT_TITLE_RE = re.compile(r"\bDefault Title\b", flags=re.IGNORECASE)
 
-
-# Warning categories that come from the webshop lookup (see
-# lookup_shop_price) - replaced wholesale whenever the lookup reruns
+# Warning categories that come from the webshop lookup. They are replaced as
+# a whole whenever the lookup runs again (e.g. after the user fixed a field).
 SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "variant", "not_found", "shop"}
 
 
-def name_tokens(name):
+def name_tokens(name: str) -> list[str]:
     """The words used to compare a label's product name with a webshop
     name: lowercase, punctuation and "|" dropped, × read as x, and without
     a "- 6 stk." quantity tag or a "1/2 " part prefix - those are on the
@@ -25,7 +37,7 @@ def name_tokens(name):
     return [token for token in re.split(r"[^\w]+", name.casefold()) if token]
 
 
-def tokens_match(label_token, shop_token):
+def tokens_match(label_token: str, shop_token: str) -> bool:
     """Exact match, or a match despite one of two OCR slips:
     - a "|" read as "1"/"I"/"l" and glued onto the next word
       ("1200x100" for "| 200x100", "Iopbevaring" for "| opbevaring")
@@ -45,7 +57,7 @@ def tokens_match(label_token, shop_token):
     )
 
 
-def token_coverage(tokens, other_tokens):
+def token_coverage(tokens: list[str], other_tokens: list[str]) -> float:
     """Share of `tokens` found in `other_tokens` (0.0 - 1.0)."""
     if not tokens:
         return 0.0
@@ -53,7 +65,8 @@ def token_coverage(tokens, other_tokens):
     return found / len(tokens)
 
 
-def format_shop_price(value):
+def format_shop_price(value) -> str:
+    """A Shopify price as Danish text: 1699900 (øre) or "16999.00" (kroner) -> "16.999 kr"."""
     if value in (None, ""):
         return ""
     try:
@@ -74,13 +87,13 @@ def _shop_get_json(session, url, params=None):
     return response.json()
 
 
-def search_shop(session, cache, cache_lock, query, limit):
+def search_shop(session, cache: dict, cache_lock: Lock, query: str, limit: int) -> list[str]:
     """Product handles the webshop's own search suggests for `query`, best
     first. Cached per (query, limit) - only successful searches, so a
     transient failure isn't stuck for the rest of the batch.
 
-    cache_lock guards the dict since multiple images are looked up
-    concurrently (see OCR_WORKERS)."""
+    cache_lock guards the dict, as several photos are looked up at the same
+    time (see OCR_WORKERS)."""
     cache_key = ("search", query, limit)
     with cache_lock:
         if cache_key in cache:
@@ -97,7 +110,7 @@ def search_shop(session, cache, cache_lock, query, limit):
     return handles
 
 
-def fetch_shop_product(session, cache, cache_lock, handle):
+def fetch_shop_product(session, cache: dict, cache_lock: Lock, handle: str) -> dict:
     """One webshop product as {title, url, candidates} - a candidate per
     variant (see build_variant_candidates). Cached per handle."""
     cache_key = ("product", handle)
@@ -117,7 +130,7 @@ def fetch_shop_product(session, cache, cache_lock, handle):
     return product
 
 
-def shop_image_url(image):
+def shop_image_url(image) -> str:
     """Shopify gives images as "//cdn..." strings or {"src": ...} dicts."""
     source = image.get("src") if isinstance(image, dict) else image
     if not source:
@@ -125,12 +138,10 @@ def shop_image_url(image):
     return f"https:{source}" if source.startswith("//") else source
 
 
-def build_variant_candidates(product_title, product_url, product_data):
-    """Flatten one fetched product into a list of candidates - one per
-    variant, or a single entry for a variant-less product. Used both for
-    automatic matching and for the review window's "pick the right one"
-    choices, so the two always agree on what a candidate looks like.
-    `url` deep-links straight to the variant (see build_variant_url)."""
+def build_variant_candidates(product_title: str, product_url: str, product_data: dict) -> list[Candidate]:
+    """One candidate per variant of a product (or one for a product without
+    variants). The same shape is used for automatic matching and for the
+    review window's choices."""
     product_image = shop_image_url(product_data.get("featured_image"))
     variants = product_data.get("variants") or [{}]
     candidates = []
@@ -155,17 +166,15 @@ def build_variant_candidates(product_title, product_url, product_data):
     return candidates
 
 
-def build_variant_url(product_url, variant_id):
-    """A product page URL that deep-links straight to one specific
-    variant - most Shopify themes pre-select that variant's colour/size
-    option (and its price) on load instead of defaulting to whichever
-    variant happens to be listed first."""
+def build_variant_url(product_url: str, variant_id) -> str:
+    """A link that opens the product page with this variant (colour, size)
+    and its price selected."""
     if variant_id:
         return f"{product_url}?variant={variant_id}"
     return product_url
 
 
-def rank_candidates(candidates, label_tokens):
+def rank_candidates(candidates: list[Candidate], label_tokens: list[str]) -> list[tuple]:
     """Candidates sorted best first, each as (label_coverage,
     shop_coverage, candidate): label_coverage = how much of the label's
     name is in the shop name, shop_coverage = the reverse."""
@@ -183,7 +192,7 @@ def rank_candidates(candidates, label_tokens):
     return ranked
 
 
-def clear_winner(ranked):
+def clear_winner(ranked: list[tuple]) -> Candidate | None:
     """The one candidate that contains every word of the label's name and
     fits it strictly better than any other - or None. Two variants that
     both fit equally well (the label doesn't say which colour) is not a
@@ -195,13 +204,17 @@ def clear_winner(ranked):
     return ranked[0][2]
 
 
-def find_by_name(session, cache, cache_lock, varenavn, label_tokens, exclude_url=""):
-    """Candidates found by searching the webshop for the label's name,
-    keeping only those that contain every word of it - numbers, sizes and
-    the model name included. Needed because the webshop search always
-    returns *something*: when the real product isn't on the shop it
-    suggests a near miss (Bali -> Cali, Siesta 140x200 -> Siesta 200x300),
-    and those must never be offered."""
+def find_by_name(
+    session, cache: dict, cache_lock: Lock, varenavn: str, label_tokens: list[str], exclude_url: str = ""
+) -> list[Candidate]:
+    """Candidates found by searching the webshop for the label's name.
+
+    Only candidates that contain every word of the name (numbers, sizes and
+    the model name included) are kept: the shop's search always returns
+    *something*, and when the real product isn't on the shop that is a near
+    miss (Bali -> Cali, Siesta 140x200 -> Siesta 200x300) that must never be
+    offered.
+    """
     query = " ".join(name_tokens(varenavn))
     if not query:
         return []
@@ -224,22 +237,24 @@ def find_by_name(session, cache, cache_lock, varenavn, label_tokens, exclude_url
     return [candidate for _, candidate in found]
 
 
-def format_combined_price(current_price, compare_price):
+def format_combined_price(current_price: str, compare_price: str) -> str:
+    """ "8.999 kr (12.999 kr)": the sale price, with the normal price in brackets."""
     if current_price and compare_price and current_price != compare_price:
         return f"{current_price} ({compare_price})"
     return current_price
 
 
-def lookup_shop_price(session, cache, cache_lock, mk_varenummer, varenavn, part=""):
+def lookup_shop_price(
+    session, cache: dict, cache_lock: Lock, mk_varenummer: str, varenavn: str, part: str = ""
+) -> tuple[dict, list[tuple[str, str]]]:
     """Find the label's product on the webshop.
 
     Fills in varenavn/price/url only when it is safe to do so without
     anyone looking: the product was found via the label's own number,
     exactly one variant contains every word of the label's name, and the
-    item isn't marked as only part of the item (`part`, those never get
-    a price).
-    Everything else returns `candidates` for the user to choose from, plus a
-    warning that says what to check:
+    item isn't marked as only part of an item (those never get a price).
+    Everything else returns ``candidates`` for the user to choose from, plus
+    a warning that says what to check:
 
     - the number isn't on the shop but the name is -> offered, to confirm
       (the number is often a supplier code, e.g. "UE 45990201")
@@ -267,8 +282,8 @@ def lookup_shop_price(session, cache, cache_lock, mk_varenummer, varenavn, part=
         winner = clear_winner(ranked)
         if winner is not None:
             if part:
-                # Identified, but a part never gets a price - offer it
-                # so the user can confirm with one click
+                # Identified, but a part never gets a price - offer it so
+                # the user can confirm it with one click
                 result["candidates"] = [{**winner, "found_by": "nummer"}]
                 return result, []
             result["varenavn"] = winner["name"]

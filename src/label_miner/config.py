@@ -4,48 +4,28 @@ from . import __version__
 
 APP_VERSION = __version__  # shown in the title bar
 
-# The user manual, built by docs/manual/make_manual.py. Installed next to
-# Label-Miner.exe; opened by the "? Hjælp" buttons.
+# The user manual, built by docs/manual/make_manual.py. The installer puts it
+# next to Label-Miner.exe, and the "? Hjælp" buttons open it.
 MANUAL_NAME = "Label-Miner-Vejledning.pdf"
 
-
-DEFAULT_FONT_FAMILY = "Segoe UI"
-
-
-DEFAULT_FONT = (DEFAULT_FONT_FAMILY, 10)
-
-
-SUPPORTED_EXTENSIONS = {
-    ".heic",
-    ".heif",
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".bmp",
-    ".tif",
-    ".tiff",
-}
-
-
-MAX_IMAGE_SIDE = 2500
-
-
+# The webshop where products and prices are looked up (a Shopify store).
 SHOP_URL = "https://moebelkompagniet.dk"
 
+SUPPORTED_EXTENSIONS = {".heic", ".heif", ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
-# How many images are processed in flight at once (OCR + webshop price
-# lookup together). Docling's DocumentConverter has been verified safe to
-# call concurrently from multiple threads against one shared instance (see
-# extract_label), and doing so measurably speeds up a batch: on this
-# machine (16 logical cores, CPU OCR backend) 3 workers processed a sample
-# of label photos ~1.8x faster than sequentially, with zero errors and
-# byte-identical OCR text vs. a single-threaded run. Kept modest rather
-# than maxed out to the core count - most of the win comes from overlapping
-# OCR with the webshop network round trips, and this is a desktop app run
-# by one person, not a batch server.
+# Photos are scaled down to this before OCR: phone photos are ~4000 px, and
+# the labels read just as well at this size, much faster.
+MAX_IMAGE_SIDE = 2500
+
+# Photos processed at the same time. One Docling converter can safely be
+# shared between threads, and overlapping the OCR of one photo with the
+# webshop requests of another made a batch ~1.8x faster with 3 workers
+# (16-core CPU, no GPU). More workers gained little for a desktop app.
 OCR_WORKERS = 3
 
-
+# The shop's Google Sheet, in column order. The export writes these columns
+# and "Kopiér resultat" copies all but the last two, so the rows can be
+# pasted straight into the sheet.
 EXCEL_COLUMNS = [
     "Varenummer",
     "Varenavn",
@@ -60,29 +40,20 @@ EXCEL_COLUMNS = [
     "URL",
     "Image name",
 ]
-
-
 COPY_COLUMNS = EXCEL_COLUMNS[:-2]
 
+# ---- Look -----------------------------------------------------------------
 
-# Shared severity colors, used by both the review window and the status
-# Treeview on the main window, so the same problem reads the same way
-# everywhere in the app.
+DEFAULT_FONT_FAMILY = "Segoe UI"
+DEFAULT_FONT = (DEFAULT_FONT_FAMILY, 10)
+
+# Status colours, shared by the result list and the review window so the same
+# problem looks the same everywhere.
 COLOR_OK = "#3fb950"
-
-
 COLOR_WARNING = "#d29922"
-
-
 COLOR_ERROR = "#f85149"
-
-
 COLOR_MUTED = "#9aa0a6"
-
-
-# The review window's main button - deliberately the only green, filled
-# button in the window, so "approve" can't be confused with anything else
+# The review window's "approve" button: the only green, filled button there,
+# so it can't be mistaken for anything else.
 COLOR_APPROVE = "#238636"
-
-
 COLOR_APPROVE_ACTIVE = "#2ea043"

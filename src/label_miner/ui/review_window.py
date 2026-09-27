@@ -18,7 +18,7 @@ from .theme import open_manual, resolve_tk_color, set_window_icon, shade_color
 
 
 class ReviewWindow:
-    """The window the user uses to check a label that couldn't be approved
+    """The window the user checks a label in when it couldn't be approved
     automatically. Built to be hard to get wrong:
 
     - one plain question at the top says what to check (review_question),
@@ -284,11 +284,10 @@ class ReviewWindow:
         fields.grid(row=3, column=0, sticky="ew", pady=(16, 0))
         fields.columnconfigure(0, weight=1)
 
-        # One free-text price/comment field rather than a separate "Pris"
-        # + "Sammenligningspris" pair - excel_rows() only ever reads
-        # "price", straight into the "Vejledende priser"
-        # column, and format_combined_price() already folds any discount
-        # into it as "1234 kr (4321 kr)".
+        # One free-text price field rather than a price + compare-at price
+        # pair: the export has a single comments column for it, and a
+        # discount is already written as "1234 kr (4321 kr)"
+        # (see shop.format_combined_price).
         self.entries = {}
         self.entry_labels = {}
         self.add_entry(fields, 0, "MK Varenummer", "mk_varenummer")
@@ -774,11 +773,9 @@ class ReviewWindow:
             if self.pending_crop_fraction:
                 self.show_committed_crop_overlay()
         except Exception as error:
-            # A redraw failing here used to fail *silently* (Tk swallows
-            # exceptions raised inside widget callbacks), which made
-            # rotation look like it simply did nothing and left every
-            # later button press hitting the same broken redraw. Now it's
-            # visible instead, on the canvas and in the status bar.
+            # Tk swallows exceptions raised in widget callbacks, so a failed
+            # redraw would look like a button that does nothing. Show it on
+            # the canvas and in the status bar instead.
             debug_log(f"resize_image fejlede: {error!r}")
             self.image_canvas.delete("all")
             self.image_canvas.create_text(

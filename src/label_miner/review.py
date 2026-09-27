@@ -1,20 +1,26 @@
-"""What the review window asks about a label that wasn't approved automatically."""
+"""What the review window asks about a label that wasn't approved automatically.
+
+A label can collect several warnings. Showing them all as a list confused the
+user, so the review window shows one plain question instead, picked by
+priority, with the fields it concerns marked.
+"""
 
 from .config import COLOR_ERROR, COLOR_WARNING
 from .parsing import MISSING_FIELD_NAMES
 
 
-def warning_messages(warnings):
+def warning_messages(warnings: list[tuple[str, str]]) -> list[str]:
     """Flatten (category, message) warning tuples down to just the messages."""
     return [message for _, message in warnings]
 
 
-def review_question(warnings, part=""):
-    """The one thing the user is asked to do for a label in review, in plain
-    Danish: {"title", "detail", "fields", "others", "color"}. Picked by
-    priority from the record's warnings - "fields" are the entry fields to
-    highlight, "others" the remaining warning messages, shown smaller.
-    Returns None when there is nothing to review."""
+def review_question(warnings: list[tuple[str, str]], part: str = "") -> dict | None:
+    """The one thing the user is asked about a label, in plain Danish.
+
+    Returns {"title", "detail", "fields", "others", "color"}: "fields" are
+    the entry fields to mark, "others" the remaining warnings (shown
+    smaller). None when there is nothing to review.
+    """
     if not warnings:
         return None
     by_category = {}

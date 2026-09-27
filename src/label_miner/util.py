@@ -6,6 +6,17 @@ from pathlib import Path
 PACKAGE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_DIR.parents[1]
 
+# Run with --debug (also works for the installed .exe, from a terminal) to see
+# each photo's OCR text, the parsed fields and diagnostics on the console.
+DEBUG = "--debug" in sys.argv
+
+
+def debug_log(*args, **kwargs) -> None:
+    """print(), but only with --debug. The windowed .exe has no console at
+    all (sys.stdout is None), so printing there would crash."""
+    if DEBUG and sys.stdout is not None:
+        print(*args, **kwargs)
+
 
 def resource_path(name: str) -> Path:
     """Find a bundled resource (the icon, the docling-models folder).
@@ -21,17 +32,3 @@ def resource_path(name: str) -> Path:
         if candidate.exists():
             return candidate
     return REPO_ROOT / name
-
-
-# Pass --debug on the command line (or when launching the frozen .exe from a
-# terminal) to see per-image raw OCR text/JSON and other diagnostics printed
-# to the console. Without it the program stays silent, which also avoids a
-# crash on a --windowed/--noconsole build, where sys.stdout is None.
-DEBUG = "--debug" in sys.argv
-
-
-def debug_log(*args, **kwargs):
-    """print(), but only under --debug, and safe when no console is
-    attached (sys.stdout is None on a windowed frozen build)."""
-    if DEBUG and sys.stdout is not None:
-        print(*args, **kwargs)

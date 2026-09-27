@@ -1,4 +1,11 @@
-"""Reading the label: OCR with Docling and picking out the label's own lines."""
+"""Reading the label: OCR with Docling, then picking out the label's own lines.
+
+OCR reads everything in the photo - the label, but also other stickers,
+shipping labels and printing on the box. ``label_blocks_in_reading_order``
+keeps only the text that belongs to the label and puts its lines in order,
+using the label's layout: every line is centred, around the words OUTLET and
+STAND.
+"""
 
 import os
 import tempfile
@@ -16,7 +23,7 @@ from .util import debug_log, resource_path
 register_heif_opener()
 
 
-def create_converter():
+def create_converter():  # -> docling DocumentConverter
     """A Docling converter for label photos, with the OCR engine pinned.
 
     RapidOCR (torch backend) is pinned instead of Docling's "auto" choice:
@@ -68,40 +75,36 @@ class TextBlock:
     bottom: float
 
     @property
-    def width(self):
+    def width(self) -> float:
         return self.right - self.left
 
     @property
-    def height(self):
+    def height(self) -> float:
         return self.bottom - self.top
 
     @property
-    def center_x(self):
+    def center_x(self) -> float:
         return (self.left + self.right) / 2
 
     @property
-    def center_y(self):
+    def center_y(self) -> float:
         return (self.top + self.bottom) / 2
 
 
-def load_label_photo(image_path):
+def load_label_photo(image_path: Path) -> Image.Image:
     """The photo as upright RGB, no larger than MAX_IMAGE_SIDE.
 
-    Phone photos (HEIC and plain JPEG alike) very commonly store pixels
-    "sideways" plus an EXIF Orientation tag rather than upright pixels -
-    ReviewWindow.show_image() corrects for this before *displaying* a
-    photo (via the identical ImageOps.exif_transpose() call), and Docling
-    opens images with plain PIL.Image.open(...).convert("RGB") and never
-    looks at EXIF, so it has to happen here before OCR as well - otherwise
-    a rotated-by-EXIF label gets OCR'd sideways or upside down while
-    looking perfectly upright in the review window."""
+    Phone photos often store their pixels sideways plus an EXIF orientation
+    tag. Docling ignores EXIF, so the photo is turned upright here - the
+    same way the review window shows it.
+    """
     with Image.open(image_path) as opened:
         image = ImageOps.exif_transpose(opened).convert("RGB")
     image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE), Image.Resampling.LANCZOS)
     return image
 
 
-def save_temporary_png(image, temporary_paths: list[Path]) -> Path:
+def save_temporary_png(image: Image.Image, temporary_paths: list[Path]) -> Path:
     """Save the image as a new temporary PNG (Docling reads files, not images)
     and add its path to temporary_paths; see remove_temporary_files."""
     handle, name = tempfile.mkstemp(suffix=".png")
@@ -120,17 +123,16 @@ def remove_temporary_files(temporary_paths: list[Path]) -> None:
             debug_log(f"Could not delete temporary file {temporary_path}: {error}")
 
 
-def read_text_blocks(converter, image_path):
+def read_text_blocks(converter, image_path: Path) -> list[TextBlock]:
     """OCR one image with Docling, as TextBlocks in Docling's own order.
 
-    One Docling text item can be several pieces of text from different
-    places in the photo, merged: it then has one `prov` entry per piece,
-    each with its own box and a `charspan` saying which characters of the
-    item's text are in it. Each piece becomes its own TextBlock here.
-    (Using only the first box for the whole item once put the entire label
-    of IMG_0277 at the position of a 2-letter scrap of packaging text: the
-    zoom showed that scrap, and the packaging text was read as part of the
-    label.)"""
+    One Docling text item can combine pieces of text from different places
+    in the photo. It then has one ``prov`` entry per piece, each with its own
+    box and a ``charspan`` saying which characters are in it, and each piece
+    becomes its own TextBlock. Taking only the first box for the whole item
+    would place the label wherever its first piece happens to be - in one
+    test photo, a two-letter scrap of packaging text at the photo's edge.
+    """
     document = converter.convert(str(image_path)).document
     page = next(iter(document.pages.values()), None)
     blocks = []
@@ -150,29 +152,30 @@ def read_text_blocks(converter, image_path):
     return blocks
 
 
-def estimated_line_height(block, along_span):
-    """Height of one line of text in `block` (in the direction lines
-    advance). A block can hold several lines - IMG_0277's whole label is a
-    single block - so its full height is often far more than a line.
-    Estimated from how much area its characters fill: with this font a
-    character is about half a line high wide, and lines fill roughly 70 %
-    of the block's width, so area ≈ chars × 0.55 h × h / 0.7."""
+def estimated_line_height(block: TextBlock, along_span) -> float:
+    """Height of one line of text in ``block`` (in the direction lines advance).
+
+    A block can hold several lines - sometimes a whole label - so its height
+    can be far more than one line. It is estimated from the area its
+    characters fill: a character is about half a line high wide, and lines
+    fill roughly 70 % of the block's width, so area ≈ chars × 0.55 h × h / 0.7.
+    """
     low, high = along_span(block)
     extent = high - low
     area_estimate = (1.27 * block.width * block.height / max(len(block.text), 1)) ** 0.5
     return min(extent, area_estimate)
 
 
-def label_blocks_in_reading_order(blocks):
+def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlock], int]:
     """(label_blocks, turn): only the text blocks that belong to the
     label, in the order the label's lines are meant to be read - and, for
     a label photographed sideways, the rotation (degrees, PIL's
     counter-clockwise convention) that turns the photo upright, else 0.
 
     Photos often contain other text next to the label - a second sticker,
-    a shipping label, printing on the box, handwriting - which used to end
-    up inside the parsed fields. And Docling's own block order sometimes
-    puts "OUTLET" before the product name, which breaks parsing too.
+    a shipping label, printing on the box, handwriting - which would
+    otherwise end up in the fields. And Docling's own block order sometimes
+    puts "OUTLET" before the product name.
 
     Labels are printed with every line centred, so the label is found by
     starting from the block(s) containing OUTLET/STAND and growing outward
@@ -188,8 +191,8 @@ def label_blocks_in_reading_order(blocks):
 
     Ordering is only as good as the blocks, though: Docling sometimes
     merges several sideways lines into one block with the lines in the
-    wrong order inside it (IMG_0285), which no reordering can fix. So
-    extract_label re-reads a sideways photo turned upright (see `turn`).
+    wrong order inside it, which no reordering can fix. So extract_label
+    re-reads a sideways photo turned upright (see ``turn``).
 
     Falls back to all blocks in Docling's order when there is no OUTLET or
     STAND to anchor on."""
@@ -198,9 +201,9 @@ def label_blocks_in_reading_order(blocks):
         return blocks, 0
     # Orientation is judged only from short, single-line anchors ("OUTLET",
     # "STAND: B"), which are much taller than wide when sideways. A block
-    # holding several lines can be any shape (IMG_9168's whole upright
-    # label is one block, slightly taller than wide) - with no short
-    # anchor the label is taken to be upright, the normal case.
+    # holding several lines can be any shape (a whole upright label read as
+    # one block can be slightly taller than wide) - with no short anchor
+    # the label is taken to be upright, the normal case.
     single_lines = [block for block in anchors if len(block.text) <= 15]
     sideways = bool(single_lines) and (
         sum(1 for block in single_lines if block.height > block.width) * 2 > len(single_lines)
@@ -260,7 +263,9 @@ def label_blocks_in_reading_order(blocks):
     return sorted(label, key=reading_position), turn
 
 
-def label_area(label_blocks, image_size):
+def label_area(
+    label_blocks: list[TextBlock], image_size: tuple[int, int]
+) -> tuple[float, float, float, float]:
     """The label's area as fractions (left, top, right, bottom) of the
     photo, with a margin around its text - the review window zooms in on
     this. Fractions, so they apply to the full-resolution photo too."""
