@@ -9,3 +9,6 @@ __pycache__/
 # Build output (manual PDF, screenshots, PyInstaller, installer)
 build/
 dist/
+
+# Docling models (packaging/fetch_models.ps1)
+docling-models/

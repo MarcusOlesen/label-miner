@@ -18,8 +18,8 @@ from ..util import REPO_ROOT, debug_log, resource_path
 
 
 def open_manual(parent=None):
-    """Open the PDF manual: next to the .exe when installed, next to the
-    script when run from source."""
+    """Open the PDF manual: next to the .exe when installed, in build/ (made
+    by docs/manual/make_manual.py) when run from source."""
     for folder in (Path(sys.executable).parent, REPO_ROOT / "build"):
         manual = folder / MANUAL_NAME
         if manual.exists():
