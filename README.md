@@ -7,7 +7,7 @@ shop's Google Sheet. It only asks a person about the labels it isn't sure of.
 ![The review window: one plain question, the webshop's suggestions as picture cards, and the photo zoomed in on the label](docs/images/review-window.png)
 
 It is the first half of a two-step workflow at a furniture outlet. Label Miner fills the sheet from
-photos of incoming items; **Label Printer** (a separate repository) prints the price labels from
+photos of incoming items; [Label Printer](https://github.com/MarcusOlesen/label-printer) prints the price labels from
 that sheet.
 
 ## How it works
