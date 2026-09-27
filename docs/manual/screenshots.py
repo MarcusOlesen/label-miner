@@ -228,6 +228,7 @@ def steps(s, out, result):
     yield lambda: not app.processing and app.work_completed >= len(DEMO)
     yield 800
     img = s.shot()
+    save("readme_main_window", img)  # without callouts, for the README
     tree = s.box(app.results_tree, pad=0)
     review_button = s.box(app.review_button)
     status_col_x = tree[0] + d(250)
@@ -275,6 +276,7 @@ def steps(s, out, result):
 
     yield from review("IMG_0302.HEIC")
     img = shots["img"]
+    save("readme_review_window", img)
     question = s.box(window.question_frame)
     cards = s.box(window.choices_frame)
     fields = s.box(window.entry_labels["mk_varenummer"][0])

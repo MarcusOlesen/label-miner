@@ -22,7 +22,8 @@ dependencies = [
 # The OCR engine. Heavy (PyTorch); not needed for the tests, which replay cached OCR results.
 ocr = ["docling>=2.50", "rapidocr>=3"]
 gui = ["sv-ttk>=2", "tkinterdnd2>=0.4"]
-dev = ["pytest>=8", "ruff>=0.6"]
+# docling-core (no torch) loads the recorded OCR results the tests replay
+dev = ["pytest>=8", "ruff>=0.6", "docling-core>=2.90"]
 build = ["pyinstaller>=6"]
 
 [project.scripts]

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # No Docling or torch: the tests replay recorded OCR results. Pillow and
+      # pillow-heif are pinned (-c) because the recordings are keyed by the
+      # decoded pixels.
+      - name: Install
+        run: pip install -e .[dev,gui] -c requirements.txt
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Test
+        run: pytest -v
