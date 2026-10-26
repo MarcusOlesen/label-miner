@@ -153,13 +153,16 @@ def read_text_blocks(converter, image_path: Path) -> list[TextBlock]:
 
 
 def estimated_line_height(block: TextBlock, along_span) -> float:
-    """Height of one line of text in ``block`` (in the direction lines advance).
+    """Height of one line of text in ``block`` (the step between lines, in
+    the direction they advance).
 
     A block can hold several lines - sometimes a whole label - so its height
     can be far more than one line. It is estimated from the area its
-    characters fill: a character is about half a line high wide, and lines
-    fill roughly 70 % of the block's width, so area ≈ chars × 0.55 h × h / 0.7.
-    """
+    characters fill: a character is about 0.55 line heights wide, and lines
+    fill roughly 70 % of the block's width, so area ≈ chars * 0.55 h * h / 0.7.
+    Width * height is the same either way round, so this works for sideways
+    blocks too; ``along_span`` only gives the block's own extent, which caps
+    the estimate (a single line can't be taller than its block)."""
     low, high = along_span(block)
     extent = high - low
     area_estimate = (1.27 * block.width * block.height / max(len(block.text), 1)) ** 0.5

@@ -1,0 +1,4 @@
+Switch from docling to RapidOCR -> remove overhead. Need to fix read_text_blocks, docling specific tests and the thresholds
+PEP8 -> consistant use of _ for internal only functions
+Rename functions and variables to better cover useage, see especially shop.py and ocr.py with regard to directions e.g. along_span should just be y_span
+Clicking on lines does not (always) open the right review
