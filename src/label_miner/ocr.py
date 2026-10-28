@@ -139,9 +139,11 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     gap of up to two lines still lets a line the OCR missed be skipped.
 
     A label photographed sideways is read by the OCR line by line just
-    fine - only the order comes out wrong - so the same logic runs with the
-    axes swapped. The direction (which end is the first line) follows from
-    STAND coming after OUTLET, or OUTLET coming after the item number.
+    fine - only the order comes out wrong - so its blocks are turned a
+    quarter turn clockwise first and the same logic runs on them. The
+    direction (which end is the first line) follows from STAND coming after
+    OUTLET, or OUTLET coming after the item number; it also tells when that
+    quarter turn was the wrong way round.
 
     RapidOCR reads sideways text less reliably, though ("90x90" as
     "06×06"), so extract_label re-reads a sideways photo turned upright
@@ -155,35 +157,27 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     # Every block is one line, and a line is much wider than tall unless
     # it is sideways
     sideways = sum(1 for block in anchors if block.height > block.width) * 2 > len(anchors)
+    # From here on the label's lines run left to right, one below the other
+    # (or upside down, see direction)
+    upright = [turned_clockwise(block) for block in blocks] if sideways else list(blocks)
+    original = {id(upright_block): block for upright_block, block in zip(upright, blocks, strict=True)}
+    anchors = [block for block in upright if LABEL_ANCHOR_RE.search(block.text)]
 
-    def along(block):  # position in the direction the label's lines advance
-        return block.center_x if sideways else block.center_y
-
-    def along_span(block):
-        return (block.left, block.right) if sideways else (block.top, block.bottom)
-
-    def across(block):  # position along a line
-        return block.center_y if sideways else block.center_x
-
-    def across_size(block):
-        return block.height if sideways else block.width
-
-    axis = sum(across(block) for block in anchors) / len(anchors)
-    line_size = min(along_span(block)[1] - along_span(block)[0] for block in anchors)
+    axis_x = sum(block.center_x for block in anchors) / len(anchors)
+    line_height = min(block.height for block in anchors)
     label = list(anchors)
     added = True
     while added:
         added = False
-        start = min(along_span(block)[0] for block in label)
-        end = max(along_span(block)[1] for block in label)
-        label_width = max(across_size(block) for block in label)
-        for block in blocks:
+        label_top = min(block.top for block in label)
+        label_bottom = max(block.bottom for block in label)
+        label_width = max(block.width for block in label)
+        for block in upright:
             if block in label:
                 continue
-            low, high = along_span(block)
-            gap = max(low - end, start - high, 0)
-            off_axis = abs(across(block) - axis)
-            if gap <= 2 * line_size and off_axis <= 0.12 * max(label_width, across_size(block)):
+            gap = max(block.top - label_bottom, label_top - block.bottom, 0)
+            off_axis = abs(block.center_x - axis_x)
+            if gap <= 2 * line_height and off_axis <= 0.12 * max(label_width, block.width):
                 label.append(block)
                 added = True
 
@@ -193,24 +187,31 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
         (block for block in label if LABEL_NUMBER_RE.search(block.text) and block not in (outlet, stand)),
         None,
     )
+    # 1: the first line is at the top; -1: the label is upside down
     if outlet is not None and stand is not None and outlet is not stand:
-        direction = 1 if along(stand) > along(outlet) else -1
+        direction = 1 if stand.center_y > outlet.center_y else -1
     elif number is not None:
-        direction = 1 if along(outlet or stand) > along(number) else -1
+        direction = 1 if (outlet or stand).center_y > number.center_y else -1
     else:
         direction = -1 if sideways else 1
 
     def reading_position(block):
-        low, high = along_span(block)
-        return low if direction == 1 else -high
+        return block.top if direction == 1 else -block.bottom
 
-    # Sideways text whose lines advance to the left was turned clockwise -
-    # turn it back counter-clockwise (+90), and the other way round
-    turn = (90 if direction == -1 else -90) if sideways else 0
-    return sorted(label, key=reading_position), turn
+    # The photo needs the same quarter turn clockwise (-90) - or, when that
+    # left the label upside down, a quarter turn counter-clockwise (+90)
+    turn = (-90 if direction == 1 else 90) if sideways else 0
+    return [original[id(block)] for block in sorted(label, key=reading_position)], turn
 
 
-def label_area(
+def turned_clockwise(block: TextBlock) -> TextBlock:
+    """The block as it sits in the photo turned a quarter turn clockwise:
+    right becomes down. Only positions relative to other blocks matter, so
+    the photo's own width isn't needed (the turned block is shifted by it)."""
+    return TextBlock(block.text, -block.bottom, block.left, -block.top, block.right)
+
+
+def label_box(
     label_blocks: list[TextBlock], image_size: tuple[int, int]
 ) -> tuple[float, float, float, float]:
     """The label's area as fractions (left, top, right, bottom) of the

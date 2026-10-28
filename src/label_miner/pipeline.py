@@ -3,9 +3,9 @@
 from pathlib import Path
 from threading import Lock
 
-from .ocr import label_area, label_blocks_in_reading_order, load_label_photo, read_text_blocks
+from .ocr import label_blocks_in_reading_order, label_box, load_label_photo, read_text_blocks
 from .parsing import label_warnings, parse_label_fields, part_note
-from .shop import format_combined_price, lookup_shop_price
+from .shop import format_combined_price, look_up_product
 from .util import debug_log
 
 
@@ -49,10 +49,10 @@ def extract_label(
     # label is upright there too (and label_box matches it)
     parsed_label["photo_turn"] = turn
     if label_blocks is not blocks and label_blocks:
-        parsed_label["label_box"] = label_area(label_blocks, image.size)
+        parsed_label["label_box"] = label_box(label_blocks, image.size)
     warnings = label_warnings(parsed_label, keywords_missing)
 
-    shop_result, shop_warnings = lookup_shop_price(
+    shop_result, shop_warnings = look_up_product(
         session,
         cache,
         cache_lock,

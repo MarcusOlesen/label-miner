@@ -81,13 +81,13 @@ def format_shop_price(value) -> str:
     return f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " kr"
 
 
-def _shop_get_json(session, url, params=None):
+def _get_json(session, url, params=None):
     response = session.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
     response.raise_for_status()
     return response.json()
 
 
-def search_shop(session, cache: dict, cache_lock: Lock, query: str, limit: int) -> list[str]:
+def search_product_handles(session, cache: dict, cache_lock: Lock, query: str, limit: int) -> list[str]:
     """Product handles the webshop's own search suggests for `query`, best
     first. Cached per (query, limit) - only successful searches, so a
     transient failure isn't stuck for the rest of the batch.
@@ -98,7 +98,7 @@ def search_shop(session, cache: dict, cache_lock: Lock, query: str, limit: int) 
     with cache_lock:
         if cache_key in cache:
             return cache[cache_key]
-    data = _shop_get_json(
+    data = _get_json(
         session,
         f"{SHOP_URL}/search/suggest.json",
         {"q": query, "resources[type]": "product", "resources[limit]": limit},
@@ -110,27 +110,27 @@ def search_shop(session, cache: dict, cache_lock: Lock, query: str, limit: int) 
     return handles
 
 
-def fetch_shop_product(session, cache: dict, cache_lock: Lock, handle: str) -> dict:
+def fetch_product(session, cache: dict, cache_lock: Lock, handle: str) -> dict:
     """One webshop product as {title, url, candidates} - a candidate per
-    variant (see build_variant_candidates). Cached per handle."""
+    variant (see variant_candidates). Cached per handle."""
     cache_key = ("product", handle)
     with cache_lock:
         if cache_key in cache:
             return cache[cache_key]
-    product_data = _shop_get_json(session, f"{SHOP_URL}/products/{handle}.js")
+    product_data = _get_json(session, f"{SHOP_URL}/products/{handle}.js")
     title = (product_data.get("title") or "").strip()
     url = f"{SHOP_URL}/products/{handle}"
     product = {
         "title": title,
         "url": url,
-        "candidates": build_variant_candidates(title, url, product_data),
+        "candidates": variant_candidates(title, url, product_data),
     }
     with cache_lock:
         cache[cache_key] = product
     return product
 
 
-def shop_image_url(image) -> str:
+def absolute_image_url(image) -> str:
     """Shopify gives images as "//cdn..." strings or {"src": ...} dicts."""
     source = image.get("src") if isinstance(image, dict) else image
     if not source:
@@ -138,11 +138,11 @@ def shop_image_url(image) -> str:
     return f"https:{source}" if source.startswith("//") else source
 
 
-def build_variant_candidates(product_title: str, product_url: str, product_data: dict) -> list[Candidate]:
+def variant_candidates(product_title: str, product_url: str, product_data: dict) -> list[Candidate]:
     """One candidate per variant of a product (or one for a product without
     variants). The same shape is used for automatic matching and for the
     review window's choices."""
-    product_image = shop_image_url(product_data.get("featured_image"))
+    product_image = absolute_image_url(product_data.get("featured_image"))
     variants = product_data.get("variants") or [{}]
     candidates = []
     for variant in variants:
@@ -159,14 +159,14 @@ def build_variant_candidates(product_title: str, product_url: str, product_data:
                     variant.get("compare_at_price", product_data.get("compare_at_price"))
                 ),
                 "id": variant.get("id"),
-                "url": build_variant_url(product_url, variant.get("id")),
-                "image": shop_image_url(variant.get("featured_image")) or product_image,
+                "url": variant_url(product_url, variant.get("id")),
+                "image": absolute_image_url(variant.get("featured_image")) or product_image,
             }
         )
     return candidates
 
 
-def build_variant_url(product_url: str, variant_id) -> str:
+def variant_url(product_url: str, variant_id) -> str:
     """A link that opens the product page with this variant (colour, size)
     and its price selected."""
     if variant_id:
@@ -174,7 +174,7 @@ def build_variant_url(product_url: str, variant_id) -> str:
     return product_url
 
 
-def rank_candidates(candidates: list[Candidate], label_tokens: list[str]) -> list[tuple]:
+def rank_by_name(candidates: list[Candidate], label_tokens: list[str]) -> list[tuple]:
     """Candidates sorted best first, each as (label_coverage,
     shop_coverage, candidate): label_coverage = how much of the label's
     name is in the shop name, shop_coverage = the reverse."""
@@ -192,11 +192,11 @@ def rank_candidates(candidates: list[Candidate], label_tokens: list[str]) -> lis
     return ranked
 
 
-def clear_winner(ranked: list[tuple]) -> Candidate | None:
+def single_best_match(ranked: list[tuple]) -> Candidate | None:
     """The one candidate that contains every word of the label's name and
     fits it strictly better than any other - or None. Two variants that
     both fit equally well (the label doesn't say which colour) is not a
-    winner."""
+    match."""
     if not ranked or ranked[0][0] < 1.0:
         return None
     if len(ranked) > 1 and ranked[1][:2] == ranked[0][:2]:
@@ -204,7 +204,7 @@ def clear_winner(ranked: list[tuple]) -> Candidate | None:
     return ranked[0][2]
 
 
-def find_by_name(
+def find_candidates_by_name(
     session, cache: dict, cache_lock: Lock, varenavn: str, label_tokens: list[str], exclude_url: str = ""
 ) -> list[Candidate]:
     """Candidates found by searching the webshop for the label's name.
@@ -218,19 +218,19 @@ def find_by_name(
     query = " ".join(name_tokens(varenavn))
     if not query:
         return []
-    handles = search_shop(session, cache, cache_lock, query, 3)
+    handles = search_product_handles(session, cache, cache_lock, query, 3)
     if not handles:
         # Long names with colour/options can be too specific for the
         # shop's search - retry with just the start of the name
         short_query = " ".join(label_tokens[:3])
         if short_query != query:
-            handles = search_shop(session, cache, cache_lock, short_query, 3)
+            handles = search_product_handles(session, cache, cache_lock, short_query, 3)
     found = []
     for handle in handles:
-        product = fetch_shop_product(session, cache, cache_lock, handle)
+        product = fetch_product(session, cache, cache_lock, handle)
         if product["url"] == exclude_url:
             continue
-        for coverage, shop_coverage, candidate in rank_candidates(product["candidates"], label_tokens):
+        for coverage, shop_coverage, candidate in rank_by_name(product["candidates"], label_tokens):
             if coverage == 1.0:
                 found.append((shop_coverage, candidate))
     found.sort(key=lambda entry: entry[0], reverse=True)
@@ -244,7 +244,7 @@ def format_combined_price(current_price: str, compare_price: str) -> str:
     return current_price
 
 
-def lookup_shop_price(
+def look_up_product(
     session, cache: dict, cache_lock: Lock, mk_varenummer: str, varenavn: str, part: str = ""
 ) -> tuple[dict, list[tuple[str, str]]]:
     """Find the label's product on the webshop.
@@ -267,64 +267,63 @@ def lookup_shop_price(
     SHOP_WARNING_CATEGORIES."""
     result = {"varenavn": "", "price": "", "compare_price": "", "url": "", "candidates": []}
     label_tokens = name_tokens(varenavn)
-    number = PART_SUFFIX_RE.sub("", (mk_varenummer or "").strip())
-    if not number and not label_tokens:
+    item_number = PART_SUFFIX_RE.sub("", (mk_varenummer or "").strip())
+    if not item_number and not label_tokens:
         return result, [("shop", "Kan ikke søge på hjemmesiden uden varenummer eller varenavn")]
 
     try:
-        by_number = None
-        if number:
-            handles = search_shop(session, cache, cache_lock, number, 1)
+        number_product = None
+        if item_number:
+            handles = search_product_handles(session, cache, cache_lock, item_number, 1)
             if handles:
-                by_number = fetch_shop_product(session, cache, cache_lock, handles[0])
+                number_product = fetch_product(session, cache, cache_lock, handles[0])
 
-        ranked = rank_candidates(by_number["candidates"], label_tokens) if by_number else []
-        winner = clear_winner(ranked)
-        if winner is not None:
+        ranked_variants = rank_by_name(number_product["candidates"], label_tokens) if number_product else []
+        match = single_best_match(ranked_variants)
+        if match is not None:
             if part:
                 # Identified, but a part never gets a price - offer it so
                 # the user can confirm it with one click
-                result["candidates"] = [{**winner, "found_by": "nummer"}]
+                result["candidates"] = [{**match, "found_by": "nummer"}]
                 return result, []
-            result["varenavn"] = winner["name"]
-            result["price"] = winner["price"]
-            result["compare_price"] = winner["compare_price"]
-            result["url"] = winner["url"]
-            warnings = [] if winner["price"] else [("shop", "Kunne ikke læse aktuel pris på hjemmesiden")]
+            result["varenavn"] = match["name"]
+            result["price"] = match["price"]
+            result["compare_price"] = match["compare_price"]
+            result["url"] = match["url"]
+            warnings = [] if match["price"] else [("shop", "Kunne ikke læse aktuel pris på hjemmesiden")]
             return result, warnings
 
-        by_name = (
-            find_by_name(
-                session, cache, cache_lock, varenavn, label_tokens, by_number["url"] if by_number else ""
-            )
+        number_url = number_product["url"] if number_product else ""
+        name_candidates = (
+            find_candidates_by_name(session, cache, cache_lock, varenavn, label_tokens, number_url)
             if label_tokens
             else []
         )
     except Exception as error:
         return result, [("shop", f"Kunne ikke søge på hjemmesiden: {error}")]
 
-    number_candidates = [{**candidate, "found_by": "nummer"} for _, _, candidate in ranked[:5]]
-    by_name = [{**candidate, "found_by": "navn"} for candidate in by_name]
-    if by_number and by_name:
-        result["candidates"] = by_name[:3] + number_candidates[:3]
+    number_candidates = [{**candidate, "found_by": "nummer"} for _, _, candidate in ranked_variants[:5]]
+    name_candidates = [{**candidate, "found_by": "navn"} for candidate in name_candidates]
+    if number_product and name_candidates:
+        result["candidates"] = name_candidates[:3] + number_candidates[:3]
         return result, [
             (
                 "conflict",
-                f'Nummeret {number} hører til "{by_number["title"]}" på hjemmesiden, '
+                f'Nummeret {item_number} hører til "{number_product["title"]}" på hjemmesiden, '
                 f'men labelen siger "{varenavn}". Vælg den rigtige vare.',
             )
         ]
-    if by_number:
+    if number_product:
         result["candidates"] = number_candidates
         return result, [("variant", "Navnet passer ikke præcist med hjemmesiden - vælg den rigtige vare")]
-    if by_name:
-        result["candidates"] = by_name[:5]
+    if name_candidates:
+        result["candidates"] = name_candidates[:5]
         return result, [
             (
                 "by_name",
-                f"Nummeret {number} findes ikke på hjemmesiden, men varen blev fundet via navnet. "
+                f"Nummeret {item_number} findes ikke på hjemmesiden, men varen blev fundet via navnet. "
                 "Tjek at det er den rigtige."
-                if number
+                if item_number
                 else "Varen blev fundet via navnet. Tjek at det er den rigtige.",
             )
         ]

@@ -39,3 +39,14 @@ def test_part_of_item_never_gets_a_price(pipeline_results):
 def test_sideways_labels_are_read_upright(pipeline_results):
     turned = {name for name, r in pipeline_results.items() if r["parsed"].get("photo_turn")}
     assert turned == {"15-9/IMG_9164.HEIC", "24-9/IMG_0285.HEIC"}
+
+
+def test_review_reasons(pipeline_results):
+    """The warning category decides which question the review window asks."""
+
+    def categories(name):
+        return {category for category, _ in pipeline_results[name]["warnings"]}
+
+    assert "by_name" in categories("24-9/IMG_0275.HEIC")  # supplier code, found by its name
+    assert "conflict" in categories("24-9/IMG_0302.HEIC")  # the number is another product
+    assert "not_found" in categories("24-9/IMG_0296.HEIC")

@@ -12,7 +12,7 @@ from PIL import Image, ImageOps, ImageTk
 from ..config import COLOR_APPROVE, COLOR_APPROVE_ACTIVE, COLOR_MUTED, COLOR_OK, COLOR_WARNING, SHOP_URL
 from ..parsing import VALID_STANDS, item_part, part_note
 from ..review import review_question
-from ..shop import SHOP_WARNING_CATEGORIES, format_combined_price, lookup_shop_price
+from ..shop import SHOP_WARNING_CATEGORIES, format_combined_price, look_up_product
 from ..util import debug_log
 from .theme import open_manual, resolve_tk_color, set_window_icon, shade_color
 
@@ -576,7 +576,7 @@ class ReviewWindow:
         ).start()
 
     def _refresh_price_in_background(self, target_record, fields):
-        shop_result, shop_warnings = lookup_shop_price(
+        shop_result, shop_warnings = look_up_product(
             self.app.http_session,
             self.app.price_cache,
             self.app.price_cache_lock,

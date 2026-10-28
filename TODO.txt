@@ -1,2 +1,1 @@
 PEP8 -> consistant use of _ for internal only functions
-Rename functions and variables to better cover useage, see especially shop.py and ocr.py with regard to directions e.g. along_span should just be y_span
