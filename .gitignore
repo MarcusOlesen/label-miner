@@ -10,8 +10,5 @@ __pycache__/
 build/
 dist/
 
-# Docling models (packaging/fetch_models.ps1)
-docling-models/
-
 # Real photo batches (private; see tools/run_label_tests.py)
 data/

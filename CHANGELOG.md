@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- Clicking a row that waits for review opens that label, not the next one in line.
+- OCR runs on RapidOCR directly instead of through Docling: no PyTorch, no layout model and no
+  model download (the models ship inside the rapidocr package), so the install and the installer
+  are much smaller and the app starts faster. Each line of text is now its own block; the label is
+  still picked out by its centred lines, with the centre-line limit retuned to 0.12 label widths.
+  The fixture photos score as before; the larger private photo set needs a new
+  `tools/run_label_tests.py --record-ocr` run.
+
 ## 2.1 - 2026-09-25
 - A Danish user manual, generated from screenshots of the real app, opened by "? Hjælp" buttons on
   the start screen, the main window and the review window. The installer includes it.

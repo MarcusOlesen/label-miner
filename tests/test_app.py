@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from conftest import FIXTURES
-from harness import CachedConverter, CachedSession
+from harness import CachedOcrEngine, CachedSession
 
 pytestmark = pytest.mark.gui
 
@@ -48,9 +48,9 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
     for name in photos:
         shutil.copy(FIXTURES / "photos" / name, batch / Path(name).name)
 
-    converter = CachedConverter(FIXTURES / "ocr")
+    engine = CachedOcrEngine(FIXTURES / "ocr")
     monkeypatch.setattr(
-        app_module.LabelMinerApp, "load_docling", lambda self: setattr(self, "converter", converter)
+        app_module.LabelMinerApp, "load_ocr_engine", lambda self: setattr(self, "ocr_engine", engine)
     )
     monkeypatch.setattr(app_module, "clean_up_old_extract_dirs", lambda *args: [])  # leave %TEMP% alone
     # pytest's own arguments (e.g. tests/test_app.py) would be taken for dropped photos
@@ -62,7 +62,7 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
     try:
         app = app_module.LabelMinerApp(root)
         app.http_session = CachedSession(FIXTURES / "shop")
-        app.docling_ready()
+        app.ocr_engine_ready()
         app.begin_processing(sorted(batch.iterdir()))
         run_until(root, lambda: not app.processing and app.work_completed >= len(photos))
 

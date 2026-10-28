@@ -17,10 +17,11 @@ SUPPORTED_EXTENSIONS = {".heic", ".heif", ".jpg", ".jpeg", ".png", ".bmp", ".tif
 # the labels read just as well at this size, much faster.
 MAX_IMAGE_SIDE = 2500
 
-# Photos processed at the same time. One Docling converter can safely be
-# shared between threads, and overlapping the OCR of one photo with the
-# webshop requests of another made a batch ~1.8x faster with 3 workers
-# (16-core CPU, no GPU). More workers gained little for a desktop app.
+# Photos processed at the same time. One OCR engine can safely be shared
+# between threads, and overlapping the OCR of one photo with the webshop
+# requests of another made a batch ~1.8x faster with 3 workers (Docling,
+# 16-core CPU, no GPU). With RapidOCR alone, 3 workers still OCR ~1.25x
+# faster than 1 on a 4-core CPU. More workers gained little for a desktop app.
 OCR_WORKERS = 3
 
 # The shop's Google Sheet, in column order. The export writes these columns

@@ -39,7 +39,7 @@ from ..config import (
     OCR_WORKERS,
     SUPPORTED_EXTENSIONS,
 )
-from ..ocr import create_converter, remove_temporary_files, save_temporary_png
+from ..ocr import create_ocr_engine, remove_temporary_files, save_temporary_png
 from ..pipeline import extract_label
 from ..review import warning_messages
 from ..util import debug_log
@@ -58,7 +58,7 @@ class LabelMinerApp:
         self.theme_applied = theme_applied
         self.files = []
         self.records = []
-        self.converter = None
+        self.ocr_engine = None
         self.http_session = requests.Session()
         # Room for every OCR worker's webshop requests at once; requests'
         # default pool of 10 connections would quietly make them wait.
@@ -93,11 +93,11 @@ class LabelMinerApp:
         self.work_durations = []
         self.progress_info = tk.StringVar(value="")
 
-        self.status = tk.StringVar(value="Indlæser Docling og dets modeller...")
+        self.status = tk.StringVar(value="Indlæser OCR-modellerne...")
         self.selected_count = tk.StringVar(value="Valgte billeder: 0")
 
         # The window shows one of three "screens" at a time: a boot screen
-        # while Docling's models load, a select screen with one big button,
+        # while the OCR models load, a select screen with one big button,
         # and the work screen (results, export) while photos are processed -
         # rather than one crowded window with unexplained disabled controls.
         self.screen_container = ttk.Frame(root, padding=24)
@@ -110,7 +110,7 @@ class LabelMinerApp:
 
         self.root.after(100, self.check_review_queue)
         self.boot_progress.start(50)
-        threading.Thread(target=self.load_docling, daemon=True).start()
+        threading.Thread(target=self.load_ocr_engine, daemon=True).start()
         threading.Thread(target=self._clean_up_old_extract_dirs, daemon=True).start()
 
     def _clean_up_old_extract_dirs(self):
@@ -156,10 +156,10 @@ class LabelMinerApp:
         self.boot_progress.pack()
         ttk.Label(center, textvariable=self.status, foreground=COLOR_MUTED).pack(pady=(12, 0))
 
-        # Only shown on a load failure (see loading_failed/retry_load_docling)
-        # so a broken Docling install doesn't leave the user stuck staring at
+        # Only shown on a load failure (see loading_failed/retry_load_ocr_engine)
+        # so a broken OCR install doesn't leave the user stuck staring at
         # a spinner that will never finish.
-        self.boot_retry_button = ttk.Button(center, text="Prøv igen", command=self.retry_load_docling)
+        self.boot_retry_button = ttk.Button(center, text="Prøv igen", command=self.retry_load_ocr_engine)
 
     def build_select_screen(self):
         self.select_frame = ttk.Frame(self.screen_container)
@@ -312,21 +312,21 @@ class LabelMinerApp:
         ttk.Separator(self.work_frame, orient="horizontal").pack(fill="x", pady=(12, 6))
         ttk.Label(self.work_frame, textvariable=self.status, foreground=COLOR_MUTED).pack(anchor="w")
 
-    def load_docling(self):
+    def load_ocr_engine(self):
         """Background thread: load the OCR models (takes a few seconds)."""
         try:
-            self.converter = create_converter()
+            self.ocr_engine = create_ocr_engine()
         except Exception as error:
             self.root.after(0, self.loading_failed, error)
             return
-        self.root.after(0, self.docling_ready)
+        self.root.after(0, self.ocr_engine_ready)
 
-    def docling_ready(self):
+    def ocr_engine_ready(self):
         self.loading = False
         self.boot_progress.stop()
         self.boot_frame.pack_forget()
         self.select_frame.pack(fill="both", expand=True)
-        self.status.set("Docling er klar. Vælg billeder for at starte.")
+        self.status.set("Klar. Vælg billeder for at starte.")
         # Photos or a zip dropped onto the program's desktop icon (or
         # opened with it) arrive as command-line arguments - start on them
         # right away, as if they'd been picked in the file dialog
@@ -337,20 +337,20 @@ class LabelMinerApp:
     def loading_failed(self, error):
         self.loading = False
         self.boot_progress.stop()
-        self.status.set("Docling kunne ikke indlæses.")
+        self.status.set("OCR-modellerne kunne ikke indlæses.")
         self.boot_retry_button.pack(pady=(16, 0))
         messagebox.showerror(
-            "Docling ikke tilgængelig",
-            f"Installer Docling med: pip install docling pillow-heif\n\nDetaljer: {error}",
+            "OCR ikke tilgængelig",
+            f"Installer OCR med: pip install rapidocr onnxruntime\n\nDetaljer: {error}",
             parent=self.root,
         )
 
-    def retry_load_docling(self):
+    def retry_load_ocr_engine(self):
         self.loading = True
         self.boot_retry_button.pack_forget()
-        self.status.set("Indlæser Docling og dets modeller...")
+        self.status.set("Indlæser OCR-modellerne...")
         self.boot_progress.start(50)
-        threading.Thread(target=self.load_docling, daemon=True).start()
+        threading.Thread(target=self.load_ocr_engine, daemon=True).start()
 
     def select_images(self):
         image_patterns = [f"*{ext}" for ext in sorted(SUPPORTED_EXTENSIONS)]
@@ -430,7 +430,7 @@ class LabelMinerApp:
         self.start_processing()
 
     def start_processing(self):
-        if not self.files or self.converter is None or self.processing:
+        if not self.files or self.ocr_engine is None or self.processing:
             return
         self.processing = True
         self.progress.configure(value=0, maximum=len(self.files))
@@ -453,7 +453,7 @@ class LabelMinerApp:
         started_at = time.perf_counter()
         try:
             raw_text, parsed_label, warnings, candidates = extract_label(
-                self.converter,
+                self.ocr_engine,
                 path,
                 self.http_session,
                 self.price_cache,
@@ -890,7 +890,7 @@ class LabelMinerApp:
         try:
             image_path = save_temporary_png(working_image, temporary_paths)
             raw_text, parsed_label, warnings, candidates = extract_label(
-                self.converter,
+                self.ocr_engine,
                 image_path,
                 self.http_session,
                 self.price_cache,

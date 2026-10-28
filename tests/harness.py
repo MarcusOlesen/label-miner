@@ -3,7 +3,7 @@
 The regression tests run the real ``extract_label`` pipeline, but with the two
 slow or external dependencies replaced by recordings:
 
-- ``CachedConverter`` stands in for Docling. Results are stored per image,
+- ``CachedOcrEngine`` stands in for RapidOCR. Results are stored per image,
   keyed by the image's pixels, so any change in what the app sends to OCR
   (crop, rotation, resize) is a cache miss rather than a silently stale hit.
 - ``CachedSession`` stands in for ``requests.Session`` with recorded webshop
@@ -18,46 +18,55 @@ import json
 import re
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
 
-def image_key(path: Path) -> str:
-    with Image.open(path) as image:
-        image = image.convert("RGB")
-        digest = hashlib.sha1(f"{image.size}".encode())
-        digest.update(image.tobytes())
+def image_key(image: Image.Image) -> str:
+    image = image.convert("RGB")
+    digest = hashlib.sha1(f"{image.size}".encode())
+    digest.update(image.tobytes())
     return digest.hexdigest()
 
 
-class CachedConverter:
+class CachedOcrEngine:
+    """Called like a RapidOCR engine: engine(image) -> result with
+    ``boxes`` (four corner points per line), ``txts`` and ``scores``."""
+
     def __init__(self, cache_dir: Path, live: bool = False):
         self.cache_dir = Path(cache_dir)
         self.live = live
-        self.converter = None
+        self.engine = None
         self.lock = threading.Lock()
         self.ocr_runs = 0
 
-    def convert(self, source):
-        from docling_core.types.doc import DoclingDocument
-
-        cache_file = self.cache_dir / f"{image_key(Path(source))}.json"
-        if cache_file.exists():
-            data = json.loads(cache_file.read_text(encoding="utf-8"))
-            document = DoclingDocument.model_validate(data)
-        elif self.live:
+    def __call__(self, image: Image.Image):
+        cache_file = self.cache_dir / f"{image_key(image)}.json"
+        recorded = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else None
+        if recorded is not None and "txts" not in recorded:
+            recorded = None  # recorded by an older OCR engine (Docling)
+        if recorded is None:
+            if not self.live:
+                raise LookupError(f"No recorded OCR result for this image ({cache_file.name})")
             with self.lock:
-                if self.converter is None:
-                    from label_miner.ocr import create_converter
+                if self.engine is None:
+                    from label_miner.ocr import create_ocr_engine
 
-                    self.converter = create_converter()
-            document = self.converter.convert(str(source)).document
+                    self.engine = create_ocr_engine()
+            result = self.engine(image)
             self.ocr_runs += 1
+            boxes = [] if result.boxes is None else result.boxes
+            recorded = {
+                "boxes": [[[float(x), float(y)] for x, y in box] for box in boxes],
+                "txts": list(result.txts or ()),
+                "scores": [float(score) for score in result.scores or ()],
+            }
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(document.export_to_dict(), ensure_ascii=False), encoding="utf-8")
-        else:
-            raise LookupError(f"No recorded OCR result for {source} ({cache_file.name})")
-        return type("ConversionResult", (), {"document": document})()
+            cache_file.write_text(json.dumps(recorded, ensure_ascii=False), encoding="utf-8")
+        return SimpleNamespace(
+            boxes=recorded["boxes"] or None, txts=tuple(recorded["txts"]), scores=tuple(recorded["scores"])
+        )
 
 
 class _Response:

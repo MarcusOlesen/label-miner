@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      # No Docling or torch: the tests replay recorded OCR results. Pillow and
+      # No OCR engine: the tests replay recorded OCR results. Pillow and
       # pillow-heif are pinned (-c) because the recordings are keyed by the
       # decoded pixels.
       - name: Install

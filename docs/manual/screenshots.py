@@ -2,7 +2,7 @@
 
 Starts Label Miner on a demo batch of the fixture photos, opens the review
 window on each kind of question and captures the windows. OCR and webshop
-answers are replayed from the test fixtures (see demo_data.py), so no Docling
+answers are replayed from the test fixtures (see demo_data.py), so no OCR engine
 is needed and the result is the same every time; only the product photos in
 the review window are fetched live. Numbered callouts are positioned from the
 live widget geometry, so they stay correct when the layout changes. Used by
@@ -61,8 +61,8 @@ DEMO = [
 class Session:
     def __init__(self):
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        converter = demo_data.converter()
-        app_module.LabelMinerApp.load_docling = lambda app: setattr(app, "converter", converter)
+        engine = demo_data.ocr_engine()
+        app_module.LabelMinerApp.load_ocr_engine = lambda app: setattr(app, "ocr_engine", engine)
         app_module.clean_up_old_extract_dirs = lambda *args: []  # leave %TEMP% alone
         for name in ("askyesno", "askyesnocancel", "askokcancel"):
             setattr(review_window.messagebox, name, lambda *args, **kwargs: True)
@@ -184,7 +184,7 @@ def steps(s, out, result):
         img.save(path)
         out[name] = path
 
-    app.docling_ready()
+    app.ocr_engine_ready()
     yield 800
 
     # 1. Start screen ---------------------------------------------------------

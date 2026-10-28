@@ -3,16 +3,11 @@
 #
 # Run from anywhere:  powershell -File packaging\build.ps1
 # One-time setup:     pip install -e .[ocr,gui,build]
-#                     powershell -File packaging\fetch_models.ps1
 #                     winget install --id JRSoftware.InnoSetup -e
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-
-if (-not (Test-Path docling-models)) {
-    throw "docling-models\ is missing - run packaging\fetch_models.ps1 first"
-}
 
 Write-Host "1/3  Manual (screenshots + PDF)..." -ForegroundColor Cyan
 # Opens the app for a minute to take screenshots; don't touch the window.

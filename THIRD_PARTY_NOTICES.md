@@ -7,13 +7,11 @@ which users install themselves with pip. The Windows installer bundles them.
 
 | Package | Licence | Used for |
 |---|---|---|
-| [Docling](https://github.com/docling-project/docling) (docling, docling-core, docling-ibm-models, docling-parse) | MIT | OCR pipeline and document model |
-| [RapidOCR](https://github.com/RapidAI/RapidOCR) | Apache-2.0 | text recognition |
-| [PyTorch](https://pytorch.org/) / torchvision | BSD-3-Clause | runs the OCR and layout models |
-| [Transformers](https://github.com/huggingface/transformers), [huggingface_hub](https://github.com/huggingface/huggingface_hub) | Apache-2.0 | model loading |
+| [RapidOCR](https://github.com/RapidAI/RapidOCR) | Apache-2.0 | text detection and recognition |
+| [ONNX Runtime](https://onnxruntime.ai/) | MIT | runs the OCR models |
 | [OpenCV](https://opencv.org/) (opencv-python) | Apache-2.0 | image processing inside the OCR engine |
+| [pyclipper](https://github.com/fonttools/pyclipper), [Shapely](https://shapely.readthedocs.io/) | MIT, BSD-3-Clause | text box geometry inside the OCR engine |
 | [NumPy](https://numpy.org/) | BSD-3-Clause | arrays |
-| [Pydantic](https://docs.pydantic.dev/) | MIT | Docling's data model |
 | [Pillow](https://python-pillow.org/) | MIT-CMU | images |
 | [pillow-heif](https://github.com/bigcat88/pillow_heif) | BSD-3-Clause (bundled libraries: see below) | iPhone photos (HEIC) |
 | [Requests](https://requests.readthedocs.io/) | Apache-2.0 | webshop lookups |
@@ -24,11 +22,10 @@ which users install themselves with pip. The Windows installer bundles them.
 
 ## Models
 
-The installer bundles two model sets, downloaded by `packaging/fetch_models.ps1`. Both are licensed
-under Apache-2.0:
+The OCR models ship inside the rapidocr package, and so inside the installer:
 
-- **docling-layout-heron**, from the Docling project.
-- **RapidOCR's PP-OCR models**, from PaddleOCR.
+- **RapidOCR's PP-OCR models** (text detection, orientation and recognition), from PaddleOCR,
+  licensed under Apache-2.0.
 
 ## Native libraries in pillow-heif
 

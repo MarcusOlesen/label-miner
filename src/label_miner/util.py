@@ -19,12 +19,11 @@ def debug_log(*args, **kwargs) -> None:
 
 
 def resource_path(name: str) -> Path:
-    """Find a bundled resource (the icon, the docling-models folder).
+    """Find a bundled resource (the icon).
 
     Frozen with PyInstaller, bundled files live in sys._MEIPASS - not next
     to the .exe (a "--onedir" build puts them in "_internal"). From source,
-    the icon is in the package's assets folder and docling-models (fetched
-    by packaging/fetch_models.ps1) in the repository root.
+    the icon is in the package's assets folder.
     """
     if getattr(sys, "frozen", False):
         return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / name

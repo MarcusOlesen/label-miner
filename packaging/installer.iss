@@ -28,7 +28,7 @@ SetupIconFile={#SourcePath}..\src\label_miner\assets\label_miner.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes
-; torch only ships 64-bit wheels for Windows
+; onnxruntime only ships 64-bit wheels for Windows
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest

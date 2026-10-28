@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from harness import CachedConverter, CachedSession, score  # noqa: E402
+from harness import CachedOcrEngine, CachedSession, score  # noqa: E402
 from label_miner.pipeline import extract_label  # noqa: E402
 
 SHOWN_FIELDS = ("mk_varenummer", "varenavn", "mk_ordrenr", "stand", "price")
@@ -58,7 +58,7 @@ def main() -> int:
     answers = json.loads(answers_path.read_text(encoding="utf-8"))
     names = [name for name in answers if not name.startswith("_") and args.only in name]
 
-    converter = CachedConverter(cache / "ocr", live=args.record_ocr)
+    engine = CachedOcrEngine(cache / "ocr", live=args.record_ocr)
     session = CachedSession(cache / "shop", live=args.refresh_shop)
     shop_cache, lock = {}, threading.Lock()
     counts = Counter()
@@ -68,7 +68,7 @@ def main() -> int:
     for name in names:
         answer = answers[name]
         text, parsed, warnings, candidates = extract_label(
-            converter, photo_root / name, session, shop_cache, lock
+            engine, photo_root / name, session, shop_cache, lock
         )
         verdict, problems = score(answer, parsed, warnings, candidates)
         counts[verdict] += 1
@@ -87,7 +87,7 @@ def main() -> int:
 
     reviews = counts["REVIEW"] + counts["REVIEW ok"]
     print("\n" + "=" * 60)
-    print(f"Photos: {len(names)}   OCR runs: {converter.ocr_runs}   "
+    print(f"Photos: {len(names)}   OCR runs: {engine.ocr_runs}   "
           f"webshop requests: {session.requests}   {time.perf_counter() - started:.0f} s")  # fmt: skip
     print(f"WRONG but auto-approved: {counts['WRONG']}   (must be 0)")
     print(f"Sent to review:          {reviews}   ({counts['REVIEW']} of them unnecessary)")

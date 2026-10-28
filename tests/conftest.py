@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from harness import CachedConverter, CachedSession
+from harness import CachedOcrEngine, CachedSession
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -24,13 +24,13 @@ def pipeline_results() -> dict:
     """Every fixture photo run through the real pipeline, with recorded OCR and webshop answers."""
     from label_miner.pipeline import extract_label
 
-    converter = CachedConverter(FIXTURES / "ocr")
+    engine = CachedOcrEngine(FIXTURES / "ocr")
     session = CachedSession(FIXTURES / "shop")
     cache, lock = {}, threading.Lock()
     results = {}
     for name in fixture_photos():
         text, parsed, warnings, candidates = extract_label(
-            converter, FIXTURES / "photos" / name, session, cache, lock
+            engine, FIXTURES / "photos" / name, session, cache, lock
         )
         results[name] = {"text": text, "parsed": parsed, "warnings": warnings, "candidates": candidates}
     return results

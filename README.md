@@ -14,7 +14,7 @@ that sheet.
 
 ```mermaid
 flowchart LR
-    A["Photos<br/>(zip from Google Drive)"] --> B["OCR<br/>Docling + RapidOCR"]
+    A["Photos<br/>(zip from Google Drive)"] --> B["OCR<br/>RapidOCR"]
     B --> C["Keep the label's own text<br/>anchored on OUTLET / STAND,<br/>in reading order"]
     C --> D["Parse the fields<br/>number, name,<br/>order no., STAND"]
     D --> E["Find the product<br/>webshop search by number,<br/>checked against the name"]
@@ -67,7 +67,7 @@ fix in how OCR text is positioned.
 
 ## Tests
 
-The tests run the real pipeline without Docling or the internet. OCR results and webshop responses
+The tests run the real pipeline without the OCR engine or the internet. OCR results and webshop responses
 for the 16 photos in `tests/fixtures/` are **recorded**. The OCR recordings are keyed by the decoded
 image pixels, so any change in what the app would send to OCR shows up as a missing recording, not
 as a stale result.
@@ -94,8 +94,7 @@ pip install -e .[dev,gui] -c requirements.txt   # enough for the tests
 pytest
 ruff check . && ruff format --check .
 
-pip install -e .[ocr,gui] -c requirements.txt   # the OCR engine (PyTorch, ~2 GB)
-powershell -File packaging\fetch_models.ps1     # optional: models into docling-models\
+pip install -e .[ocr,gui] -c requirements.txt   # the OCR engine (RapidOCR, models included)
 python -m label_miner                           # start the app (--debug prints what it reads)
 ```
 
@@ -104,7 +103,7 @@ python -m label_miner                           # start the app (--debug prints 
 ```
 src/label_miner/
   config.py       settings: shop URL, sizes, workers, export columns, colours
-  ocr.py          Docling setup, text blocks, picking the label's lines
+  ocr.py          OCR engine, text blocks, picking the label's lines
   parsing.py      the label's fields and warnings (pure functions)
   shop.py         webshop search and the matching rules
   pipeline.py     one photo end to end
@@ -125,12 +124,11 @@ in English.
 ```powershell
 pip install -r requirements.txt
 pip install -e . --no-deps
-powershell -File packaging\fetch_models.ps1
 winget install --id JRSoftware.InnoSetup -e
 powershell -File packaging\build.ps1
 ```
 
-This builds the manual, freezes the app with PyInstaller (`dist\Label-Miner\`, with the models
+This builds the manual, freezes the app with PyInstaller (`dist\Label-Miner\`, with the OCR models
 bundled so it works offline) and packages it with Inno Setup into
 `build\installer\Label-Miner-Setup.exe`. That is a per-user install with no admin rights needed, a
 Danish installer, and in-place upgrades.

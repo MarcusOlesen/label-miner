@@ -2,7 +2,7 @@
 
 The manual, the guides and the practice pack all use the test fixture photos
 (tests/fixtures/photos), with the OCR and webshop answers recorded there, so
-they can be rebuilt without Docling and always show what the program really
+they can be rebuilt without the OCR engine and always show what the program really
 does with those photos.
 """
 
@@ -17,7 +17,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from harness import CachedConverter, CachedSession  # noqa: E402
+from harness import CachedOcrEngine, CachedSession  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures"
 PHOTOS = FIXTURES / "photos"
@@ -25,9 +25,9 @@ BUILD = ROOT / "build"
 ICON = ROOT / "src" / "label_miner" / "assets" / "label_miner.ico"
 
 
-def converter() -> CachedConverter:
-    """Stands in for Docling, with the recorded OCR results."""
-    return CachedConverter(FIXTURES / "ocr")
+def ocr_engine() -> CachedOcrEngine:
+    """Stands in for RapidOCR, with the recorded OCR results."""
+    return CachedOcrEngine(FIXTURES / "ocr")
 
 
 class ReplaySession:
@@ -58,7 +58,7 @@ def pipeline_results() -> dict:
     "warnings", "candidates"}}. "parsed" includes label_box and photo_turn."""
     from label_miner.pipeline import extract_label
 
-    ocr, session = converter(), CachedSession(FIXTURES / "shop")
+    ocr, session = ocr_engine(), CachedSession(FIXTURES / "shop")
     cache, lock = {}, threading.Lock()
     results = {}
     for name in answers():

@@ -1,35 +1,23 @@
-# The exact versions the released app (2.1) was built and tested with.
+# The exact versions Label Miner is built and tested with.
 #   pip install -r requirements.txt && pip install -e . --no-deps
 #
-# Pinning matters here: the frozen build depends on docling/torch internals,
-# and the recorded OCR in tests/fixtures is keyed by the decoded image pixels,
-# which depend on the Pillow and pillow-heif versions.
-#
-# Don't install easyocr in this environment. The OCR engine is pinned in
-# ocr.create_converter(), but keeping easyocr away avoids any doubt about which
-# engine produced a result.
+# Pinning matters here: the rapidocr version fixes which OCR models ship with
+# the app, and the recorded OCR in tests/fixtures is keyed by the decoded image
+# pixels, which depend on the Pillow and pillow-heif versions.
 
 # Runtime
-docling==2.127.0
-docling-core==2.96.1
-docling-ibm-models==4.0.2
-docling-parse==7.20.0
-huggingface_hub==1.31.0
 numpy==2.5.3
+onnxruntime==1.31.1
 opencv-python==5.0.0.93
 openpyxl==3.1.5
 pillow==12.3.0
 pillow_heif==1.7.0
-pydantic==2.13.5
-pydantic-settings==2.15.0
-pydantic_core==2.46.5
+pyclipper==1.4.0
 rapidocr==3.9.2
 requests==2.34.2
+shapely==2.2.0
 sv_ttk==2.6.1
 tkinterdnd2==0.6.3
-torch==2.14.0
-torchvision==0.29.0
-transformers==5.17.0
 
 # Development and build
 pytest==9.1.1
