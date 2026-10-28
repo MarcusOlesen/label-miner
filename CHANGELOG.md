@@ -8,6 +8,8 @@
   still picked out by its centred lines, with the centre-line limit retuned to 0.12 label widths.
   The fixture photos score as before; the larger private photo set needs a new
   `tools/run_label_tests.py --record-ocr` run.
+- Code: clearer names in `ocr.py` and `shop.py`, and functions used only inside their own module
+  start with `_`.
 
 ## 2.1 - 2026-09-25
 - A Danish user manual, generated from screenshots of the real app, opened by "? Hjælp" buttons on

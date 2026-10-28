@@ -159,7 +159,7 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     sideways = sum(1 for block in anchors if block.height > block.width) * 2 > len(anchors)
     # From here on the label's lines run left to right, one below the other
     # (or upside down, see direction)
-    upright = [turned_clockwise(block) for block in blocks] if sideways else list(blocks)
+    upright = [_turned_clockwise(block) for block in blocks] if sideways else list(blocks)
     original = {id(upright_block): block for upright_block, block in zip(upright, blocks, strict=True)}
     anchors = [block for block in upright if LABEL_ANCHOR_RE.search(block.text)]
 
@@ -204,7 +204,7 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     return [original[id(block)] for block in sorted(label, key=reading_position)], turn
 
 
-def turned_clockwise(block: TextBlock) -> TextBlock:
+def _turned_clockwise(block: TextBlock) -> TextBlock:
     """The block as it sits in the photo turned a quarter turn clockwise:
     right becomes down. Only positions relative to other blocks matter, so
     the photo's own width isn't needed (the turned block is shifted by it)."""

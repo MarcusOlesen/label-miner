@@ -37,7 +37,7 @@ def name_tokens(name: str) -> list[str]:
     return [token for token in re.split(r"[^\w]+", name.casefold()) if token]
 
 
-def tokens_match(label_token: str, shop_token: str) -> bool:
+def _tokens_match(label_token: str, shop_token: str) -> bool:
     """Exact match, or a match despite one of two OCR slips:
     - a "|" read as "1"/"I"/"l" and glued onto the next word
       ("1200x100" for "| 200x100", "Iopbevaring" for "| opbevaring")
@@ -61,11 +61,11 @@ def token_coverage(tokens: list[str], other_tokens: list[str]) -> float:
     """Share of `tokens` found in `other_tokens` (0.0 - 1.0)."""
     if not tokens:
         return 0.0
-    found = sum(1 for token in tokens if any(tokens_match(token, other) for other in other_tokens))
+    found = sum(1 for token in tokens if any(_tokens_match(token, other) for other in other_tokens))
     return found / len(tokens)
 
 
-def format_shop_price(value) -> str:
+def _format_shop_price(value) -> str:
     """A Shopify price as Danish text: 1699900 (øre) or "16999.00" (kroner) -> "16.999 kr"."""
     if value in (None, ""):
         return ""
@@ -87,7 +87,7 @@ def _get_json(session, url, params=None):
     return response.json()
 
 
-def search_product_handles(session, cache: dict, cache_lock: Lock, query: str, limit: int) -> list[str]:
+def _search_product_handles(session, cache: dict, cache_lock: Lock, query: str, limit: int) -> list[str]:
     """Product handles the webshop's own search suggests for `query`, best
     first. Cached per (query, limit) - only successful searches, so a
     transient failure isn't stuck for the rest of the batch.
@@ -110,9 +110,9 @@ def search_product_handles(session, cache: dict, cache_lock: Lock, query: str, l
     return handles
 
 
-def fetch_product(session, cache: dict, cache_lock: Lock, handle: str) -> dict:
+def _fetch_product(session, cache: dict, cache_lock: Lock, handle: str) -> dict:
     """One webshop product as {title, url, candidates} - a candidate per
-    variant (see variant_candidates). Cached per handle."""
+    variant (see _variant_candidates). Cached per handle."""
     cache_key = ("product", handle)
     with cache_lock:
         if cache_key in cache:
@@ -123,14 +123,14 @@ def fetch_product(session, cache: dict, cache_lock: Lock, handle: str) -> dict:
     product = {
         "title": title,
         "url": url,
-        "candidates": variant_candidates(title, url, product_data),
+        "candidates": _variant_candidates(title, url, product_data),
     }
     with cache_lock:
         cache[cache_key] = product
     return product
 
 
-def absolute_image_url(image) -> str:
+def _absolute_image_url(image) -> str:
     """Shopify gives images as "//cdn..." strings or {"src": ...} dicts."""
     source = image.get("src") if isinstance(image, dict) else image
     if not source:
@@ -138,11 +138,11 @@ def absolute_image_url(image) -> str:
     return f"https:{source}" if source.startswith("//") else source
 
 
-def variant_candidates(product_title: str, product_url: str, product_data: dict) -> list[Candidate]:
+def _variant_candidates(product_title: str, product_url: str, product_data: dict) -> list[Candidate]:
     """One candidate per variant of a product (or one for a product without
     variants). The same shape is used for automatic matching and for the
     review window's choices."""
-    product_image = absolute_image_url(product_data.get("featured_image"))
+    product_image = _absolute_image_url(product_data.get("featured_image"))
     variants = product_data.get("variants") or [{}]
     candidates = []
     for variant in variants:
@@ -154,19 +154,19 @@ def variant_candidates(product_title: str, product_url: str, product_data: dict)
         candidates.append(
             {
                 "name": name,
-                "price": format_shop_price(variant.get("price", product_data.get("price"))),
-                "compare_price": format_shop_price(
+                "price": _format_shop_price(variant.get("price", product_data.get("price"))),
+                "compare_price": _format_shop_price(
                     variant.get("compare_at_price", product_data.get("compare_at_price"))
                 ),
                 "id": variant.get("id"),
-                "url": variant_url(product_url, variant.get("id")),
-                "image": absolute_image_url(variant.get("featured_image")) or product_image,
+                "url": _variant_url(product_url, variant.get("id")),
+                "image": _absolute_image_url(variant.get("featured_image")) or product_image,
             }
         )
     return candidates
 
 
-def variant_url(product_url: str, variant_id) -> str:
+def _variant_url(product_url: str, variant_id) -> str:
     """A link that opens the product page with this variant (colour, size)
     and its price selected."""
     if variant_id:
@@ -174,7 +174,7 @@ def variant_url(product_url: str, variant_id) -> str:
     return product_url
 
 
-def rank_by_name(candidates: list[Candidate], label_tokens: list[str]) -> list[tuple]:
+def _rank_by_name(candidates: list[Candidate], label_tokens: list[str]) -> list[tuple]:
     """Candidates sorted best first, each as (label_coverage,
     shop_coverage, candidate): label_coverage = how much of the label's
     name is in the shop name, shop_coverage = the reverse."""
@@ -192,7 +192,7 @@ def rank_by_name(candidates: list[Candidate], label_tokens: list[str]) -> list[t
     return ranked
 
 
-def single_best_match(ranked: list[tuple]) -> Candidate | None:
+def _single_best_match(ranked: list[tuple]) -> Candidate | None:
     """The one candidate that contains every word of the label's name and
     fits it strictly better than any other - or None. Two variants that
     both fit equally well (the label doesn't say which colour) is not a
@@ -204,7 +204,7 @@ def single_best_match(ranked: list[tuple]) -> Candidate | None:
     return ranked[0][2]
 
 
-def find_candidates_by_name(
+def _find_candidates_by_name(
     session, cache: dict, cache_lock: Lock, varenavn: str, label_tokens: list[str], exclude_url: str = ""
 ) -> list[Candidate]:
     """Candidates found by searching the webshop for the label's name.
@@ -218,19 +218,19 @@ def find_candidates_by_name(
     query = " ".join(name_tokens(varenavn))
     if not query:
         return []
-    handles = search_product_handles(session, cache, cache_lock, query, 3)
+    handles = _search_product_handles(session, cache, cache_lock, query, 3)
     if not handles:
         # Long names with colour/options can be too specific for the
         # shop's search - retry with just the start of the name
         short_query = " ".join(label_tokens[:3])
         if short_query != query:
-            handles = search_product_handles(session, cache, cache_lock, short_query, 3)
+            handles = _search_product_handles(session, cache, cache_lock, short_query, 3)
     found = []
     for handle in handles:
-        product = fetch_product(session, cache, cache_lock, handle)
+        product = _fetch_product(session, cache, cache_lock, handle)
         if product["url"] == exclude_url:
             continue
-        for coverage, shop_coverage, candidate in rank_by_name(product["candidates"], label_tokens):
+        for coverage, shop_coverage, candidate in _rank_by_name(product["candidates"], label_tokens):
             if coverage == 1.0:
                 found.append((shop_coverage, candidate))
     found.sort(key=lambda entry: entry[0], reverse=True)
@@ -274,12 +274,12 @@ def look_up_product(
     try:
         number_product = None
         if item_number:
-            handles = search_product_handles(session, cache, cache_lock, item_number, 1)
+            handles = _search_product_handles(session, cache, cache_lock, item_number, 1)
             if handles:
-                number_product = fetch_product(session, cache, cache_lock, handles[0])
+                number_product = _fetch_product(session, cache, cache_lock, handles[0])
 
-        ranked_variants = rank_by_name(number_product["candidates"], label_tokens) if number_product else []
-        match = single_best_match(ranked_variants)
+        ranked_variants = _rank_by_name(number_product["candidates"], label_tokens) if number_product else []
+        match = _single_best_match(ranked_variants)
         if match is not None:
             if part:
                 # Identified, but a part never gets a price - offer it so
@@ -295,7 +295,7 @@ def look_up_product(
 
         number_url = number_product["url"] if number_product else ""
         name_candidates = (
-            find_candidates_by_name(session, cache, cache_lock, varenavn, label_tokens, number_url)
+            _find_candidates_by_name(session, cache, cache_lock, varenavn, label_tokens, number_url)
             if label_tokens
             else []
         )

@@ -60,7 +60,7 @@ MISSING_FIELD_NAMES = {
 }
 
 
-def clean_varenavn(varenavn: str) -> str:
+def _clean_varenavn(varenavn: str) -> str:
     varenavn = varenavn.replace("×", "x")
     varenavn = PIPE_RE.sub(" | ", varenavn)
     varenavn = DIAMETER_DIGITS_RE.sub(r"Ø\1", varenavn)
@@ -107,7 +107,7 @@ def parse_label_fields(text: str) -> tuple[ParsedLabel, bool]:
         name = after or header[: number.start()]
     else:
         name = header
-    parsed_label["varenavn"] = clean_varenavn(name)
+    parsed_label["varenavn"] = _clean_varenavn(name)
 
     if outlet is not None:
         order_end = stand.start() if stand is not None and stand.start() > outlet.end() else len(text)

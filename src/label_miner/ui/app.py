@@ -51,7 +51,7 @@ class LabelMinerApp:
     def __init__(self, root, theme_applied=True):
         self.root = root
         self.root.title(f"Label Miner {APP_VERSION}")
-        self.center_window(860, 600)
+        self._center_window(860, 600)
         self.root.minsize(700, 480)
         set_window_icon(self.root)
 
@@ -81,7 +81,7 @@ class LabelMinerApp:
         # Tracks standalone editors opened via reopen_record_review, keyed
         # by id(record) - lets a second double-click on the same row (e.g.
         # while a "Prøv igen" retry it just kicked off is still running in
-        # the background, see retry()/retry_finished) bring the existing
+        # the background, see _retry()/_retry_finished) bring the existing
         # editor forward instead of opening a second one that could race
         # the first (or the in-flight retry thread) writing to the same
         # record dict.
@@ -103,12 +103,12 @@ class LabelMinerApp:
         self.screen_container = ttk.Frame(root, padding=24)
         self.screen_container.pack(fill="both", expand=True)
 
-        self.build_boot_screen()
-        self.build_select_screen()
-        self.build_work_screen()
+        self._build_boot_screen()
+        self._build_select_screen()
+        self._build_work_screen()
         self.boot_frame.pack(fill="both", expand=True)
 
-        self.root.after(100, self.check_review_queue)
+        self.root.after(100, self._check_review_queue)
         self.boot_progress.start(50)
         threading.Thread(target=self.load_ocr_engine, daemon=True).start()
         threading.Thread(target=self._clean_up_old_extract_dirs, daemon=True).start()
@@ -120,7 +120,7 @@ class LabelMinerApp:
         except Exception as error:
             debug_log(f"Cleaning up old temp folders failed: {error!r}")
 
-    def center_window(self, width, height):
+    def _center_window(self, width, height):
         self.root.update_idletasks()
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -128,7 +128,7 @@ class LabelMinerApp:
         y = max((screen_height - height) // 2, 0)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
-    def build_boot_screen(self):
+    def _build_boot_screen(self):
         self.boot_frame = ttk.Frame(self.screen_container)
         center = ttk.Frame(self.boot_frame)
         center.pack(expand=True)
@@ -156,12 +156,12 @@ class LabelMinerApp:
         self.boot_progress.pack()
         ttk.Label(center, textvariable=self.status, foreground=COLOR_MUTED).pack(pady=(12, 0))
 
-        # Only shown on a load failure (see loading_failed/retry_load_ocr_engine)
+        # Only shown on a load failure (see _loading_failed/_retry_load_ocr_engine)
         # so a broken OCR install doesn't leave the user stuck staring at
         # a spinner that will never finish.
-        self.boot_retry_button = ttk.Button(center, text="Prøv igen", command=self.retry_load_ocr_engine)
+        self.boot_retry_button = ttk.Button(center, text="Prøv igen", command=self._retry_load_ocr_engine)
 
-    def build_select_screen(self):
+    def _build_select_screen(self):
         self.select_frame = ttk.Frame(self.screen_container)
         center = ttk.Frame(self.select_frame)
         center.pack(expand=True)
@@ -179,7 +179,7 @@ class LabelMinerApp:
         self.select_button = ttk.Button(
             center,
             text="📂  Vælg billeder eller ZIP",
-            command=self.select_images,
+            command=self._select_images,
             style=big_style,
         )
         self.select_button.pack()
@@ -198,7 +198,7 @@ class LabelMinerApp:
             drop_targets.append(hint)
             for widget in drop_targets:
                 widget.drop_target_register(DND_FILES)
-                widget.dnd_bind("<<Drop>>", self.handle_dropped_files)
+                widget.dnd_bind("<<Drop>>", self._handle_dropped_files)
         else:
             ttk.Label(
                 center,
@@ -211,7 +211,7 @@ class LabelMinerApp:
                 justify="center",
             ).pack(pady=(12, 0))
 
-    def build_work_screen(self):
+    def _build_work_screen(self):
         self.work_frame = ttk.Frame(self.screen_container)
 
         header = ttk.Frame(self.work_frame)
@@ -225,7 +225,7 @@ class LabelMinerApp:
         ).pack(side="right", padx=(0, 16))
 
         # Progress row (bar + ETA text) is only shown while work is actually
-        # happening - built here but not packed until update_progress_info
+        # happening - built here but not packed until _update_progress_info
         # decides there's something to show, instead of permanently
         # occupying space with an idle "Ingen behandling i gang" message.
         self.progress_frame = ttk.Frame(self.work_frame)
@@ -239,7 +239,7 @@ class LabelMinerApp:
 
         # Shown whenever there are labels waiting for review. The review
         # window only opens when the user asks for it, rather than popping
-        # up in the middle of something else (see check_review_queue).
+        # up in the middle of something else (see _check_review_queue).
         self.review_bar = ttk.Frame(self.work_frame)
         self.review_button = ttk.Button(
             self.review_bar,
@@ -288,7 +288,7 @@ class LabelMinerApp:
         self.results_tree.bind("<Double-1>", self.reopen_record_review)
 
         # Export/copy live in their own frame, packed but left empty until
-        # enable_export_controls() fills it in - so they don't exist on
+        # _enable_export_controls() fills it in - so they don't exist on
         # screen at all (not even greyed out) until there's actually
         # something finished to export, including anything sent through a
         # review-window retry.
@@ -304,7 +304,7 @@ class LabelMinerApp:
         self.copy_button = ttk.Button(
             self.actions_buttons,
             text="📋  Kopiér resultat",
-            command=self.copy_result,
+            command=self._copy_result,
             style=accent_button_style(),
         )
         self.copy_button.pack(side="left")
@@ -317,7 +317,7 @@ class LabelMinerApp:
         try:
             self.ocr_engine = create_ocr_engine()
         except Exception as error:
-            self.root.after(0, self.loading_failed, error)
+            self.root.after(0, self._loading_failed, error)
             return
         self.root.after(0, self.ocr_engine_ready)
 
@@ -334,7 +334,7 @@ class LabelMinerApp:
         if startup_paths:
             self.begin_processing(startup_paths)
 
-    def loading_failed(self, error):
+    def _loading_failed(self, error):
         self.loading = False
         self.boot_progress.stop()
         self.status.set("OCR-modellerne kunne ikke indlæses.")
@@ -345,14 +345,14 @@ class LabelMinerApp:
             parent=self.root,
         )
 
-    def retry_load_ocr_engine(self):
+    def _retry_load_ocr_engine(self):
         self.loading = True
         self.boot_retry_button.pack_forget()
         self.status.set("Indlæser OCR-modellerne...")
         self.boot_progress.start(50)
         threading.Thread(target=self.load_ocr_engine, daemon=True).start()
 
-    def select_images(self):
+    def _select_images(self):
         image_patterns = [f"*{ext}" for ext in sorted(SUPPORTED_EXTENSIONS)]
         selected = filedialog.askopenfilenames(
             parent=self.root,
@@ -368,7 +368,7 @@ class LabelMinerApp:
             return
         self.begin_processing(selected)
 
-    def handle_dropped_files(self, event):
+    def _handle_dropped_files(self, event):
         self.begin_processing(self.root.tk.splitlist(event.data))
 
     def begin_processing(self, paths):
@@ -427,9 +427,9 @@ class LabelMinerApp:
         # one batch per launch, so the button never needs to come back.
         self.select_frame.pack_forget()
         self.work_frame.pack(fill="both", expand=True)
-        self.start_processing()
+        self._start_processing()
 
-    def start_processing(self):
+    def _start_processing(self):
         if not self.files or self.ocr_engine is None or self.processing:
             return
         self.processing = True
@@ -442,12 +442,12 @@ class LabelMinerApp:
         self.work_total = len(self.files)
         self.work_completed = 0
         self.work_durations = []
-        self.update_progress_info()
-        self.start_busy_indicator()
-        threading.Thread(target=self.process_in_background, daemon=True).start()
+        self._update_progress_info()
+        self._start_busy_indicator()
+        threading.Thread(target=self._process_in_background, daemon=True).start()
 
     def _extract_one(self, path):
-        """Runs on a worker thread (see process_in_background). Exceptions
+        """Runs on a worker thread (see _process_in_background). Exceptions
         are caught here rather than left in the future, so one bad photo
         can't stop the rest of the batch."""
         started_at = time.perf_counter()
@@ -467,7 +467,7 @@ class LabelMinerApp:
         duration = time.perf_counter() - started_at
         return raw_text, parsed_label, warnings, candidates, duration
 
-    def process_in_background(self):
+    def _process_in_background(self):
         """Runs up to OCR_WORKERS images through _extract_one at once
         (see that constant's comment for why this is safe/worthwhile).
         This method itself stays the single thread that ever appends to
@@ -517,7 +517,7 @@ class LabelMinerApp:
                         self.review_queue.put(record)
                     self.root.after(
                         0,
-                        self.show_result,
+                        self._show_result,
                         path,
                         raw_text,
                         parsed_label,
@@ -526,15 +526,15 @@ class LabelMinerApp:
                         duration,
                     )
         except Exception as error:
-            self.root.after(0, self.processing_failed, error)
+            self.root.after(0, self._processing_failed, error)
         else:
-            self.root.after(0, self.processing_finished)
+            self.root.after(0, self._processing_finished)
 
-    def show_result(self, path, raw_text, parsed_label, warnings, index, duration):
+    def _show_result(self, path, raw_text, parsed_label, warnings, index, duration):
         if index == 1:
-            self.stop_busy_indicator()
+            self._stop_busy_indicator()
         self.upsert_result_row(path, parsed_label, warnings, raw_text)
-        self.complete_work_unit(duration)
+        self._complete_work_unit(duration)
         self.status.set(f"Behandlet {index} af {len(self.files)} billeder.")
 
     @staticmethod
@@ -574,16 +574,16 @@ class LabelMinerApp:
         else:
             self.results_tree.insert("", tk.END, iid=iid, values=values, tags=(tag,))
 
-    def complete_work_unit(self, duration):
+    def _complete_work_unit(self, duration):
         self.work_completed += 1
         self.work_durations.append(duration)
         self.progress.configure(
             value=self.work_completed,
             maximum=max(self.work_total, self.work_completed),
         )
-        self.update_progress_info()
+        self._update_progress_info()
 
-    def update_progress_info(self):
+    def _update_progress_info(self):
         if not self.work_total:
             # Nothing going on - hide the whole progress row rather than
             # showing an idle "Ingen behandling i gang" message.
@@ -604,38 +604,38 @@ class LabelMinerApp:
         percentage = completed / self.work_total * 100
         self.progress_info.set(f"{completed}/{self.work_total} ({percentage:.0f} %) | Ca. {eta} tilbage")
 
-    def processing_finished(self):
+    def _processing_finished(self):
         self.processing = False
         if self.review_total:
             self.status.set('Behandling færdig. Tryk "Gennemse labels" for at tjekke de sidste labels.')
-            self.maybe_enable_export_controls()
+            self._maybe_enable_export_controls()
         else:
             self.status.set("Færdig. Klar til eksport.")
-            self.enable_export_controls()
+            self._enable_export_controls()
 
-    def processing_failed(self, error):
-        self.stop_busy_indicator()
+    def _processing_failed(self, error):
+        self._stop_busy_indicator()
         self.processing = False
         self.status.set("Behandlingen fejlede.")
         messagebox.showerror("Kunne ikke behandle billederne", str(error), parent=self.root)
         if self.records:
-            self.enable_export_controls()
+            self._enable_export_controls()
 
-    def start_busy_indicator(self):
+    def _start_busy_indicator(self):
         """Switch the progress bar to an indeterminate 'something is
         happening' animation - used while waiting for the first image of a
         batch to come back. A slow step interval (Tk's own default is 50ms)
         keeps this a smooth back-and-forth slide instead of a rapid,
         flickery re-draw."""
-        self.stop_busy_indicator()
+        self._stop_busy_indicator()
         self.progress.configure(mode="indeterminate")
         self.progress.start(50)
 
-    def stop_busy_indicator(self):
+    def _stop_busy_indicator(self):
         self.progress.stop()
         self.progress.configure(mode="determinate")
 
-    def check_review_queue(self):
+    def _check_review_queue(self):
         """Runs every 200 ms for the app's whole lifetime: keeps the
         "Gennemse labels (N)" button in step with how many labels are
         waiting. It never opens the review window by itself - that only
@@ -655,7 +655,7 @@ class LabelMinerApp:
             if self.review_window is not None and self.review_window.record is not None:
                 self.review_window.update_review_count()
         finally:
-            self.root.after(200, self.check_review_queue)
+            self.root.after(200, self._check_review_queue)
 
     def open_review(self):
         """ "Gennemse labels": show the review window - on the item it was
@@ -686,7 +686,7 @@ class LabelMinerApp:
         except queue.Empty:
             return None
 
-    def advance_review_window(self):
+    def _advance_review_window(self):
         """Move the (persistent) review window on to the next queued item in
         place, instead of hiding it and waiting for the next poll to open a
         new one - keeps back-to-back reviews from flickering."""
@@ -699,14 +699,14 @@ class LabelMinerApp:
         try:
             self.review_window.load_record(record)
         except Exception:
-            # Same reasoning as check_review_queue's finally block: don't
+            # Same reasoning as _check_review_queue's finally block: don't
             # let a record vanish from the queue just because showing it
             # blew up - put it back so the next poll retries it instead of
             # leaving review_total stuck one ahead of review_completed.
             self.review_queue.put(record)
             raise
 
-    def open_review_for(self, record):
+    def _open_review_for(self, record):
         """Show the batch review on this waiting record (a double-clicked
         row) rather than on whichever one is next. The record that was open
         goes back to the front of the queue, so it comes up again next."""
@@ -718,7 +718,7 @@ class LabelMinerApp:
             waiting = any(queued is record for queued in self.review_queue.queue)
         if not waiting:
             # Neither open nor queued: its "Prøv igen" is still reading it
-            # (see retry_review); retry_finished queues it again if needed.
+            # (see retry_review); _retry_finished queues it again if needed.
             self.status.set("Genlæser billedet i baggrunden - vent til det er færdigt.")
             return
         if (
@@ -765,7 +765,7 @@ class LabelMinerApp:
         if record.get("review_pending"):
             # Still waiting in the batch review - open it there instead of
             # a second editor on the same record
-            self.open_review_for(record)
+            self._open_review_for(record)
             return
         if self.review_window is not None and self.review_window.record is record:
             self.review_window.window.deiconify()
@@ -780,7 +780,7 @@ class LabelMinerApp:
                 existing.window.lift()
             else:
                 # Its "Prøv igen" retry closed the editor and is still
-                # running in the background (see retry()/retry_finished) -
+                # running in the background (see _retry()/_retry_finished) -
                 # the record isn't settled yet, so don't race it with a
                 # second editor; the row will update on its own once the
                 # retry completes.
@@ -801,15 +801,15 @@ class LabelMinerApp:
             )
         self.review_completed += 1
         self.status.set(f"Gennemgang fuldført: {self.review_completed} af {self.review_total}.")
-        self.maybe_enable_export_controls()
-        self.advance_review_window()
+        self._maybe_enable_export_controls()
+        self._advance_review_window()
 
-    def maybe_enable_export_controls(self):
+    def _maybe_enable_export_controls(self):
         if not self.processing and self.review_completed >= self.review_total:
             self.status.set("Færdig. Klar til eksport.")
-            self.enable_export_controls()
+            self._enable_export_controls()
 
-    def enable_export_controls(self):
+    def _enable_export_controls(self):
         self.auto_export_excel()
         self.export_ready_label.pack(anchor="w")
         self.actions_buttons.pack(anchor="w", pady=(6, 0))
@@ -846,7 +846,7 @@ class LabelMinerApp:
         self.status.set(f"Færdig. Excel gemt: {self.export_path.name}")
         self.export_ready_label.configure(text=f"✅ Excel gemt: {self.export_path.name}", foreground=COLOR_OK)
 
-    def copy_result(self):
+    def _copy_result(self):
         rows = excel_rows(self.records, self.source_folder_name)
         values = ["\t".join(str(value) for value in row[: len(COPY_COLUMNS)]) for row in rows]
         self.root.clipboard_clear()
@@ -865,7 +865,7 @@ class LabelMinerApp:
     def retry_review(self, record, working_image, standalone=False):
         self.work_total += 1
         self.progress.configure(maximum=self.work_total)
-        self.update_progress_info()
+        self._update_progress_info()
         self.status.set("Genlæser label i baggrunden...")
         # A retry launched from a standalone-reopened record (see
         # reopen_record_review) must never touch the live review popup -
@@ -873,17 +873,17 @@ class LabelMinerApp:
         # advancing/hiding the shared window here would yank it out from
         # under an unrelated, actually-in-progress batch review.
         if not standalone:
-            self.advance_review_window()
+            self._advance_review_window()
         threading.Thread(
-            target=self.retry_review_in_background,
+            target=self._retry_review_in_background,
             args=(record, working_image),
             daemon=True,
         ).start()
 
-    def retry_review_in_background(self, record, working_image):
+    def _retry_review_in_background(self, record, working_image):
         """Run the OCR again on a worker thread and hand the result to the
         main thread. The review counters (review_queue, review_total,
-        review_pending) are only ever changed in retry_finished, on the main
+        review_pending) are only ever changed in _retry_finished, on the main
         thread, so two retries finishing at once can't race on them."""
         temporary_paths = []
         started_at = time.perf_counter()
@@ -911,17 +911,17 @@ class LabelMinerApp:
             for warning in warning_messages(warnings):
                 debug_log(f"Advarsel: {warning}")
             duration = time.perf_counter() - started_at
-            self.root.after(0, self.show_retry_result, record, warnings, duration)
-            self.root.after(0, self.retry_finished, record, warnings)
+            self.root.after(0, self._show_retry_result, record, warnings, duration)
+            self.root.after(0, self._retry_finished, record, warnings)
         except Exception as error:
             record["warnings"] = [("error", f"Genlæsning fejlede: {error}")]
             duration = time.perf_counter() - started_at
-            self.root.after(0, self.show_retry_result, record, record["warnings"], duration)
-            self.root.after(0, self.retry_finished, record, record["warnings"])
+            self.root.after(0, self._show_retry_result, record, record["warnings"], duration)
+            self.root.after(0, self._retry_finished, record, record["warnings"])
         finally:
             remove_temporary_files(temporary_paths)
 
-    def retry_finished(self, record, warnings):
+    def _retry_finished(self, record, warnings):
         """A rescan that still turns up warnings always goes back up for
         review - whether it started from the live review queue or a
         standalone-reopened row - rather than silently leaving a
@@ -947,8 +947,8 @@ class LabelMinerApp:
         # background OCR is done and the record dict is settled, it's safe
         # for a double-click to open a fresh editor on it again.
         self.open_standalone_windows.pop(id(record), None)
-        self.maybe_enable_export_controls()
+        self._maybe_enable_export_controls()
 
-    def show_retry_result(self, record, warnings, duration):
+    def _show_retry_result(self, record, warnings, duration):
         self.upsert_result_row(record["path"], record["parsed"], warnings, record.get("raw_text", ""))
-        self.complete_work_unit(duration)
+        self._complete_work_unit(duration)

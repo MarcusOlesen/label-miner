@@ -70,7 +70,7 @@ def derive_source_folder(
     return datetime.now().strftime("%d-%m"), (common or Path.cwd())
 
 
-def process_is_running(pid: int) -> bool:
+def _process_is_running(pid: int) -> bool:
     """True if a process with this id exists (Windows). A reused id counts
     as running - that only means a leftover folder is kept a bit longer."""
     import ctypes
@@ -108,7 +108,7 @@ def clean_up_old_extract_dirs(temp_dir: Path | None = None) -> list[Path]:
         try:
             if owner_file.exists():
                 owner = int(owner_file.read_text(encoding="ascii").strip())
-                if owner == os.getpid() or process_is_running(owner):
+                if owner == os.getpid() or _process_is_running(owner):
                     continue
             elif time.time() - folder.stat().st_mtime < UNMARKED_EXTRACT_DIR_MAX_AGE:
                 continue

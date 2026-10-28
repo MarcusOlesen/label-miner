@@ -35,7 +35,7 @@ class ReviewWindow:
 
     def __init__(self, app, record, standalone=False):
         """standalone=True is reopen_record_review's path back into an
-        already-processed record: same window/UI, but confirm/skip/retry
+        already-processed record: same window/UI, but confirm/skip/_retry
         never touch review_completed/review_total/review_queue (see those
         methods below) - only the live batch-review flow (the queue-driven
         popup tracked as app.review_window) owns that bookkeeping."""
@@ -89,7 +89,7 @@ class ReviewWindow:
 
         # Has to be set before the rotation slider below: its initial
         # .set(0) fires _on_rotation_slider synchronously, which calls
-        # resize_image(), which reads self.original_image.
+        # _resize_image(), which reads self.original_image.
         self.original_image = None
         self.working_image = None
         self.crop_drag_start = None
@@ -107,24 +107,24 @@ class ReviewWindow:
             highlightthickness=0,
         )
         self.image_canvas.grid(row=0, column=0, sticky="nsew")
-        self.image_canvas.bind("<Configure>", self.resize_image)
-        self.image_canvas.bind("<ButtonPress-1>", self.crop_start_event)
-        self.image_canvas.bind("<B1-Motion>", self.crop_drag_event)
-        self.image_canvas.bind("<ButtonRelease-1>", self.crop_release_event)
+        self.image_canvas.bind("<Configure>", self._resize_image)
+        self.image_canvas.bind("<ButtonPress-1>", self._crop_start_event)
+        self.image_canvas.bind("<B1-Motion>", self._crop_drag_event)
+        self.image_canvas.bind("<ButtonRelease-1>", self._crop_release_event)
 
         image_actions = ttk.Frame(self.image_frame)
         image_actions.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         for column in range(4):
             image_actions.columnconfigure(column, weight=1)
-        ttk.Button(image_actions, text="⟲ Drej", command=lambda: self.rotate_quarter_turn(-90)).grid(
+        ttk.Button(image_actions, text="⟲ Drej", command=lambda: self._rotate_quarter_turn(-90)).grid(
             row=0, column=0, sticky="ew", padx=(0, 4)
         )
-        ttk.Button(image_actions, text="⟳ Drej", command=lambda: self.rotate_quarter_turn(90)).grid(
+        ttk.Button(image_actions, text="⟳ Drej", command=lambda: self._rotate_quarter_turn(90)).grid(
             row=0, column=1, sticky="ew", padx=4
         )
         self.zoom_button = ttk.Button(image_actions, text="Vis hele billedet", command=self.toggle_zoom)
         self.zoom_button.grid(row=0, column=2, sticky="ew", padx=4)
-        ttk.Button(image_actions, text="↻ Læs billedet igen", command=self.retry).grid(
+        ttk.Button(image_actions, text="↻ Læs billedet igen", command=self._retry).grid(
             row=0, column=3, sticky="ew", padx=(4, 0)
         )
 
@@ -162,7 +162,7 @@ class ReviewWindow:
         ttk.Button(tool_buttons, text="Spejl", command=self.mirror).grid(
             row=0, column=0, sticky="ew", padx=(0, 4)
         )
-        ttk.Button(tool_buttons, text="Nulstil billede", command=self.reset_image).grid(
+        ttk.Button(tool_buttons, text="Nulstil billede", command=self._reset_image).grid(
             row=0, column=1, sticky="ew", padx=(4, 0)
         )
         ttk.Label(
@@ -271,7 +271,7 @@ class ReviewWindow:
         self.question_others.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         self.wrapping_labels = [self.question_title, self.question_detail, self.question_others]
 
-        # Webshop suggestions as picture cards (see show_candidates)
+        # Webshop suggestions as picture cards (see _show_candidates)
         self.candidates = []
         self.candidate_cards = []
         self.selected_candidate = None
@@ -290,11 +290,11 @@ class ReviewWindow:
         # (see shop.format_combined_price).
         self.entries = {}
         self.entry_labels = {}
-        self.add_entry(fields, 0, "MK Varenummer", "mk_varenummer")
-        self.add_entry(fields, 1, "Varenavn", "varenavn")
-        self.add_entry(fields, 2, "MK ordrenr", "mk_ordrenr")
-        self.add_entry(fields, 3, "Stand", "stand")
-        self.add_entry(fields, 4, "Pris / kommentar", "price")
+        self._add_entry(fields, 0, "MK Varenummer", "mk_varenummer")
+        self._add_entry(fields, 1, "Varenavn", "varenavn")
+        self._add_entry(fields, 2, "MK ordrenr", "mk_ordrenr")
+        self._add_entry(fields, 3, "Stand", "stand")
+        self._add_entry(fields, 4, "Pris / kommentar", "price")
         self.loaded_fields = {}
 
         # Re-runs just the webshop lookup with whatever's currently typed
@@ -303,7 +303,7 @@ class ReviewWindow:
         price_actions = ttk.Frame(content)
         price_actions.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         self.price_refresh_button = ttk.Button(
-            price_actions, text="🔍  Søg på hjemmesiden igen", command=self.refresh_price
+            price_actions, text="🔍  Søg på hjemmesiden igen", command=self._refresh_price
         )
         self.price_refresh_button.pack(side="left")
         self.price_refresh_status = ttk.Label(price_actions, text="", foreground=COLOR_MUTED)
@@ -336,13 +336,13 @@ class ReviewWindow:
             text="Luk" if standalone else "Spring over – ret senere",
             command=self.skip,
         ).grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(8, 0))
-        ttk.Button(footer, text="Åbn hjemmeside", command=self.open_website).grid(
+        ttk.Button(footer, text="Åbn hjemmeside", command=self._open_website).grid(
             row=1, column=1, sticky="ew", padx=(4, 0), pady=(8, 0)
         )
 
         self.load_record(record)
 
-    def add_entry(self, parent, row, label, key):
+    def _add_entry(self, parent, row, label, key):
         label_widget = ttk.Label(parent, text=label)
         label_widget.grid(row=row * 2, column=0, sticky="w", pady=(0, 2))
         entry = ttk.Entry(parent)
@@ -350,7 +350,7 @@ class ReviewWindow:
         self.entries[key] = entry
         self.entry_labels[key] = (label_widget, label)
 
-    def mark_fields(self, fields):
+    def _mark_fields(self, fields):
         """Flag the entry fields the current question is about."""
         for key, (label_widget, text) in self.entry_labels.items():
             if key in fields:
@@ -368,7 +368,7 @@ class ReviewWindow:
     def _on_content_mousewheel(self, event):
         self.content_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-    def show_question(self, warnings):
+    def _show_question(self, warnings):
         question = review_question(warnings, (self.record or {}).get("parsed", {}).get("part", ""))
         if question is None:
             color = COLOR_OK
@@ -390,10 +390,10 @@ class ReviewWindow:
             self.question_others.grid()
         else:
             self.question_others.grid_remove()
-        self.mark_fields(fields)
+        self._mark_fields(fields)
         return fields
 
-    def show_candidates(self, candidates):
+    def _show_candidates(self, candidates):
         """Webshop suggestions as picture cards: product photo, name, price
         and whether it was found via the number or the name. Clicking a
         card selects it (see select_candidate)."""
@@ -545,10 +545,10 @@ class ReviewWindow:
     def toggle_zoom(self):
         self.zoomed = not self.zoomed and self.zoom_box is not None
         self.pending_crop_fraction = None
-        self.update_zoom_button()
-        self.resize_image()
+        self._update_zoom_button()
+        self._resize_image()
 
-    def update_zoom_button(self):
+    def _update_zoom_button(self):
         if self.zoom_box is None:
             self.zoom_button.configure(text="Vis hele billedet", state="disabled")
         else:
@@ -559,7 +559,7 @@ class ReviewWindow:
     def fields_changed(self):
         return self.record is not None and self.read_fields() != self.loaded_fields
 
-    def refresh_price(self):
+    def _refresh_price(self):
         """Re-run just the webshop lookup using whatever's currently typed
         in the fields - for fixing a typo without redoing OCR on the image."""
         if self.price_refresh_in_progress or self.record is None:
@@ -619,8 +619,8 @@ class ReviewWindow:
             self.entries[key].insert(0, target_record["parsed"].get(key, ""))
             # Now the record's own values - not unsaved edits
             self.loaded_fields[key] = self.entries[key].get().strip()
-        self.show_question(target_record["warnings"])
-        self.show_candidates(target_record["candidates"])
+        self._show_question(target_record["warnings"])
+        self._show_candidates(target_record["candidates"])
         if shop_warnings:
             self.price_refresh_status.configure(
                 text="Intet præcist match - vælg en vare herover eller ret felterne.",
@@ -640,7 +640,7 @@ class ReviewWindow:
         self.rotation_label.configure(text="0°")
         self.zoom_box = record["parsed"].get("label_box")
         self.zoomed = self.zoom_box is not None
-        self.update_zoom_button()
+        self._update_zoom_button()
 
         # Reset any in-flight-refresh visuals from whatever record was open
         # before - a late result for that old record is a no-op anyway
@@ -660,8 +660,8 @@ class ReviewWindow:
             entry.insert(0, record["parsed"].get(key, ""))
         self.loaded_fields = self.read_fields()
 
-        attention = self.show_question(record["warnings"])
-        self.show_candidates(record.get("candidates", []))
+        attention = self._show_question(record["warnings"])
+        self._show_candidates(record.get("candidates", []))
 
         self.window.deiconify()
         self.window.lift()
@@ -671,7 +671,7 @@ class ReviewWindow:
             entry.focus_set()
             entry.icursor(tk.END)
 
-        self.show_image()
+        self._show_image()
         self.update_review_count()
 
     def hide(self):
@@ -688,7 +688,7 @@ class ReviewWindow:
         self.window.lift()
         self.window.focus_force()
 
-    def open_website(self):
+    def _open_website(self):
         # `url` is set as soon as a product was found at all - matched
         # exactly or not - so this only falls back to a text search when
         # nothing was found on the shop, and does so using the varenavn
@@ -708,7 +708,7 @@ class ReviewWindow:
         current = min(self.app.review_completed + 1, self.app.review_total)
         self.review_count.set(f"Gennemgang: {current}/{self.app.review_total}")
 
-    def show_image(self):
+    def _show_image(self):
         try:
             with Image.open(self.record["path"]) as opened:
                 # Phone photos (HEIC/JPEG) commonly carry an EXIF
@@ -724,7 +724,7 @@ class ReviewWindow:
             if turn:
                 self.original_image = self.original_image.rotate(turn, expand=True)
             self.working_image = self.record.get("working_image")
-            self.resize_image()
+            self._resize_image()
         except Exception as error:
             self.image_canvas.delete("all")
             self.image_canvas.create_text(
@@ -735,10 +735,10 @@ class ReviewWindow:
                 fill="white",
             )
 
-    def resize_image(self, event=None):
+    def _resize_image(self, event=None):
         if self.original_image is None:
             # <Configure> fires as soon as the canvas is created/resized -
-            # including before show_image() has loaded anything into
+            # including before _show_image() has loaded anything into
             # original_image (e.g. the initial layout pass right after this
             # window opens). Nothing to draw yet.
             return
@@ -771,12 +771,12 @@ class ReviewWindow:
             self.image_canvas.delete("all")
             self.image_canvas.create_image(left, top, image=self.preview, anchor="nw")
             if self.pending_crop_fraction:
-                self.show_committed_crop_overlay()
+                self._show_committed_crop_overlay()
         except Exception as error:
             # Tk swallows exceptions raised in widget callbacks, so a failed
             # redraw would look like a button that does nothing. Show it on
             # the canvas and in the status bar instead.
-            debug_log(f"resize_image fejlede: {error!r}")
+            debug_log(f"_resize_image fejlede: {error!r}")
             self.image_canvas.delete("all")
             self.image_canvas.create_text(
                 20,
@@ -859,21 +859,21 @@ class ReviewWindow:
             return
         self.app.review_finished(record, record)
 
-    def ensure_working_image(self):
+    def _ensure_working_image(self):
         if self.working_image is None:
             self.working_image = self.original_image.copy()
         self.record["working_image"] = self.working_image
 
     def mirror(self):
-        self.ensure_working_image()
+        self._ensure_working_image()
         self.working_image = self.working_image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         self.record["working_image"] = self.working_image
         self.pending_crop_fraction = None
         # The label area no longer matches the mirrored photo
         self.zoom_box = None
         self.zoomed = False
-        self.update_zoom_button()
-        self.resize_image()
+        self._update_zoom_button()
+        self._resize_image()
 
     def build_edited_image(self):
         """The image actually sent for re-OCR: base image, rotated to the
@@ -910,9 +910,9 @@ class ReviewWindow:
         self.rotation_angle = float(value)
         self.pending_crop_fraction = None
         self.rotation_label.configure(text=f"{round(self.rotation_angle)}°")
-        self.resize_image()
+        self._resize_image()
 
-    def rotate_quarter_turn(self, delta):
+    def _rotate_quarter_turn(self, delta):
         """Nudge the rotation by a quick +/-90 degrees, wrapping into the
         slider's -180..180 range. Routed through the slider's own .set()
         so it stays perfectly in sync with the slider position and reuses
@@ -920,22 +920,22 @@ class ReviewWindow:
         new_angle = ((self.rotation_angle + delta + 180) % 360) - 180
         self.rotation_slider.set(new_angle)
 
-    def crop_start_event(self, event):
+    def _crop_start_event(self, event):
         if not self.image_bounds:
             return
         self.crop_drag_start = (event.x, event.y)
-        self.show_crop_overlay(event.x, event.y, event.x, event.y)
+        self._show_crop_overlay(event.x, event.y, event.x, event.y)
 
-    def crop_drag_event(self, event):
+    def _crop_drag_event(self, event):
         if self.crop_drag_start:
-            self.show_crop_overlay(
+            self._show_crop_overlay(
                 self.crop_drag_start[0],
                 self.crop_drag_start[1],
                 event.x,
                 event.y,
             )
 
-    def crop_release_event(self, event):
+    def _crop_release_event(self, event):
         if not self.crop_drag_start or not self.image_bounds:
             self.crop_drag_start = None
             return
@@ -961,19 +961,19 @@ class ReviewWindow:
                 (x2 - left) / display_width,
                 (y2 - top) / display_height,
             )
-        self.resize_image()
+        self._resize_image()
 
-    def show_committed_crop_overlay(self):
+    def _show_committed_crop_overlay(self):
         left, top, display_width, display_height = self.image_bounds
         fx1, fy1, fx2, fy2 = self.pending_crop_fraction
-        self.show_crop_overlay(
+        self._show_crop_overlay(
             left + fx1 * display_width,
             top + fy1 * display_height,
             left + fx2 * display_width,
             top + fy2 * display_height,
         )
 
-    def show_crop_overlay(self, x1=None, y1=None, x2=None, y2=None):
+    def _show_crop_overlay(self, x1=None, y1=None, x2=None, y2=None):
         if not self.image_bounds:
             return
         left, top, width, height = self.image_bounds
@@ -1003,19 +1003,19 @@ class ReviewWindow:
         )
         self.image_canvas.create_rectangle(x1, y1, x2, y2, outline="#ffffff", width=2, tags="crop-overlay")
 
-    def reset_image(self):
+    def _reset_image(self):
         self.working_image = None
         self.record.pop("working_image", None)
         self.pending_crop_fraction = None
         self.zoom_box = self.record["parsed"].get("label_box")
         self.zoomed = self.zoom_box is not None
-        self.update_zoom_button()
+        self._update_zoom_button()
         self.rotation_angle = 0.0
         self.rotation_slider.set(0)
         self.rotation_label.configure(text="0°")
-        self.resize_image()
+        self._resize_image()
 
-    def retry(self):
+    def _retry(self):
         if self.record is None:
             return
         if self.fields_changed() and not messagebox.askokcancel(
