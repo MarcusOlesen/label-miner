@@ -706,6 +706,44 @@ class LabelMinerApp:
             self.review_queue.put(record)
             raise
 
+    def open_review_for(self, record):
+        """Show the batch review on this waiting record (a double-clicked
+        row) rather than on whichever one is next. The record that was open
+        goes back to the front of the queue, so it comes up again next."""
+        window = self.review_window
+        if window is not None and window.record is record:
+            window.show()
+            return
+        with self.review_queue.mutex:
+            waiting = any(queued is record for queued in self.review_queue.queue)
+        if not waiting:
+            # Neither open nor queued: its "Prøv igen" is still reading it
+            # (see retry_review); retry_finished queues it again if needed.
+            self.status.set("Genlæser billedet i baggrunden - vent til det er færdigt.")
+            return
+        if (
+            window is not None
+            and window.fields_changed()
+            and not messagebox.askokcancel(
+                "Skift label?",
+                "Dine rettelser på den label, der er åben nu, bliver ikke gemt.",
+                parent=window.window,
+            )
+        ):
+            window.show()
+            return
+        with self.review_queue.mutex:
+            others = [queued for queued in self.review_queue.queue if queued is not record]
+            if window is not None and window.record is not None:
+                others.insert(0, window.record)
+            self.review_queue.queue.clear()
+            self.review_queue.queue.extend(others)
+        if window is None:
+            self.review_window = ReviewWindow(self, record)
+        else:
+            window.load_record(record)
+        self.review_window.show()
+
     def reopen_record_review(self, event):
         """Double-click handler on results_tree: reopens the editor for an
         already-processed row, so a mistake spotted after the fact (or
@@ -725,9 +763,9 @@ class LabelMinerApp:
         if record is None:
             return
         if record.get("review_pending"):
-            # Still waiting in the batch review - open that instead of a
-            # second editor on the same record
-            self.open_review()
+            # Still waiting in the batch review - open it there instead of
+            # a second editor on the same record
+            self.open_review_for(record)
             return
         if self.review_window is not None and self.review_window.record is record:
             self.review_window.window.deiconify()

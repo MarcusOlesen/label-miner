@@ -6,6 +6,7 @@ alive at the same time mix up their images.
 """
 
 import shutil
+import sys
 import time
 import tkinter as tk
 from pathlib import Path
@@ -52,6 +53,8 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         app_module.LabelMinerApp, "load_docling", lambda self: setattr(self, "converter", converter)
     )
     monkeypatch.setattr(app_module, "clean_up_old_extract_dirs", lambda *args: [])  # leave %TEMP% alone
+    # pytest's own arguments (e.g. tests/test_app.py) would be taken for dropped photos
+    monkeypatch.setattr(sys, "argv", sys.argv[:1])
     try:
         root = app_module.TkinterDnD.Tk() if app_module.TkinterDnD is not None else tk.Tk()
     except tk.TclError as error:
@@ -72,6 +75,14 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         app.review_window.close_window()  # ✕ keeps the place
         app.open_review()
         assert app.review_window.record is first
+
+        # Double-clicking the other waiting row opens that one, not the next in line
+        second = next(r for r in app.records if r["review_pending"] and r is not first)
+        root.update()
+        _, y, _, height = app.results_tree.bbox(str(second["path"]))
+        app.reopen_record_review(type("Event", (), {"y": y + height // 2})())
+        assert app.review_window.record is second
+        assert app.review_queue.queue[0] is first
 
         for _ in range(2):
             window = app.review_window
