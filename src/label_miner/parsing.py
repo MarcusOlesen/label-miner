@@ -36,6 +36,10 @@ STAND_RE = re.compile(r"\bSTAND\b\s*:?\s*(?P<stand>[A-Z]{1,3}\b)?", flags=re.IGN
 # The two words that identify a label's text among everything else in a photo
 LABEL_ANCHOR_RE = re.compile(r"\b(?:OUTLET|STAND)\b", flags=re.IGNORECASE)
 VALID_STANDS = {"A", "B", "C"}
+# An order number is a number (German orders: "#DE 2021"), or says the item
+# came from stock. Anything else ("Uden ordre nr.", stray text read into it)
+# is reviewed.
+VALID_ORDER_NUMBER_RE = re.compile(r"(?:#DE )?\d+|(?:FRA )?LAGER(?:VARE)?", flags=re.IGNORECASE)
 
 # OCR misreadings that are safe to undo:
 # a diameter read with a zero instead of Ø ("090", "0120")
@@ -130,8 +134,8 @@ def label_warnings(parsed_label: ParsedLabel, keywords_missing: bool) -> list[Wa
         warnings.append(("partial", "Fandt ikke både OUTLET og STAND på labelen"))
     if parsed_label["stand"] and parsed_label["stand"] not in VALID_STANDS:
         warnings.append(("suspicious", f'Usædvanlig STAND på labelen: "{parsed_label["stand"]}"'))
-    if parsed_label["mk_ordrenr"] and len(parsed_label["mk_ordrenr"].split()) > 4:
-        warnings.append(("suspicious", "Mistænkelig tekst før MK-ordrenummer"))
+    if parsed_label["mk_ordrenr"] and not VALID_ORDER_NUMBER_RE.fullmatch(parsed_label["mk_ordrenr"]):
+        warnings.append(("suspicious", f'Usædvanligt MK-ordrenummer: "{parsed_label["mk_ordrenr"]}"'))
     if parsed_label["part"]:
         warnings.append(
             (

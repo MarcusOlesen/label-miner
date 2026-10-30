@@ -78,6 +78,23 @@ def test_unusual_stand_is_suspicious():
     assert ("suspicious", 'Usædvanlig STAND på labelen: "AP"') in label_warnings(parsed, missing)
 
 
+@pytest.mark.parametrize(
+    ("order_number", "suspicious"),
+    [
+        ("135800", False),
+        ("FRA LAGER", False),
+        ("LAGERVARE", False),
+        ("#DE 2021", False),
+        ("Uden ordre nr.", True),
+        ("154197 sniseborus", True),  # box print read into the order number
+    ],
+)
+def test_unusual_order_number_is_suspicious(order_number, suspicious):
+    parsed, missing = parse_label_fields(f"103291, Leonora spisebordsstol OUTLET {order_number} STAND: B")
+    assert parsed["mk_ordrenr"] == order_number
+    assert any(category == "suspicious" for category, _ in label_warnings(parsed, missing)) == suspicious
+
+
 def test_part_of_item_is_always_flagged():
     parsed, missing = parse_label_fields("101338_1/2, Vega sofabord OUTLET 149426 STAND: B")
     assert any(category == "part" for category, _ in label_warnings(parsed, missing))
