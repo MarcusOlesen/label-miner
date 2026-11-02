@@ -7,7 +7,7 @@
 
 #define MyAppName "Label Miner"
 ; Keep in sync with __version__ in src\label_miner\__init__.py.
-#define MyAppVersion "2.1"
+#define MyAppVersion "2.2"
 #define MyAppExeName "Label-Miner.exe"
 
 [Setup]

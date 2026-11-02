@@ -1,13 +1,19 @@
 # Changelog
 
-## Unreleased
+## 2.2 - 2026-11-02
 - Clicking a row that waits for review opens that label, not the next one in line.
 - OCR runs on RapidOCR directly instead of through Docling: no PyTorch, no layout model and no
   model download (the models ship inside the rapidocr package), so the install and the installer
-  are much smaller and the app starts faster. Each line of text is now its own block; the label is
-  still picked out by its centred lines, with the centre-line limit retuned to 0.12 label widths.
-  The fixture photos score as before; the larger private photo set needs a new
-  `tools/run_label_tests.py --record-ocr` run.
+  are much smaller, the app starts in seconds instead of about a minute and a half, and each photo
+  is read about 4x faster.
+- Finding the label among RapidOCR's text: a line the OCR splits in two pieces is joined again,
+  and tilted print on the box is no longer taken for part of the label (it once ended up in the
+  order number). Each line of text is its own block; the label is still picked out by its centred
+  lines, with the centre-line limit retuned to 0.12 label widths.
+- An order number that isn't a number (also "#DE 2021"), FRA LAGER or LAGERVARE - for example
+  "Uden ordre nr." - is sent to review.
+- Measured on 195 real photos against 2.1: nothing wrong is approved, 4 more labels are approved
+  automatically and 3 more are reviewed.
 - Code: clearer names in `ocr.py` and `shop.py`, and functions used only inside their own module
   start with `_`.
 
