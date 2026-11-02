@@ -90,9 +90,8 @@
    "handle": "vega-sofabord-travertin-marmor-90x90",
    "variant": null
   },
-  "expect": "review",
-  "reason": "box part",
-  "note": "rotated label"
+  "expect": "auto",
+  "note": "rotated label; box part, confirmed by number and name"
  },
  "24-9/IMG_0302.HEIC": {
   "mk_varenummer": "106258",

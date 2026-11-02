@@ -95,11 +95,6 @@ def test_unusual_order_number_is_suspicious(order_number, suspicious):
     assert any(category == "suspicious" for category, _ in label_warnings(parsed, missing)) == suspicious
 
 
-def test_part_of_item_is_always_flagged():
-    parsed, missing = parse_label_fields("101338_1/2, Vega sofabord OUTLET 149426 STAND: B")
-    assert any(category == "part" for category, _ in label_warnings(parsed, missing))
-
-
 @pytest.mark.parametrize(
     ("number", "name", "part"),
     [("101338_1/2", "Vega", "1/2"), ("96919", "2/2 Vega", "2/2"), ("101338", "Vega 90x90", "")],

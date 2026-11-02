@@ -124,7 +124,8 @@ def parse_label_fields(text: str) -> tuple[ParsedLabel, bool]:
 
 
 def label_warnings(parsed_label: ParsedLabel, keywords_missing: bool) -> list[Warning]:
-    """Warnings about the label text itself (the webshop lookup adds its own)."""
+    """Warnings about the label text itself (the webshop lookup adds its own,
+    and decides whether only part of an item needs a look)."""
     warnings = [
         ("missing", f"Kunne ikke læse {label}")
         for key, label in MISSING_FIELD_NAMES.items()
@@ -136,12 +137,4 @@ def label_warnings(parsed_label: ParsedLabel, keywords_missing: bool) -> list[Wa
         warnings.append(("suspicious", f'Usædvanlig STAND på labelen: "{parsed_label["stand"]}"'))
     if parsed_label["mk_ordrenr"] and not VALID_ORDER_NUMBER_RE.fullmatch(parsed_label["mk_ordrenr"]):
         warnings.append(("suspicious", f'Usædvanligt MK-ordrenummer: "{parsed_label["mk_ordrenr"]}"'))
-    if parsed_label["part"]:
-        warnings.append(
-            (
-                "part",
-                f"Delvis vare (del {parsed_label['part']}) - der sættes ingen pris. "
-                "Tjek at labelen er læst rigtigt.",
-            )
-        )
     return warnings

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- Only part of an item ("1/2") is approved automatically when the webshop confirms the item by
+  its number and name, like any other label: it gets the shop's name and link, and "OBS: delvis
+  vare (del 1/2)" instead of a price. Other parts are still reviewed. On the 195 photos: 4 more
+  approved automatically, nothing else changed.
+
 ## 2.2 - 2026-11-02
 - Clicking a row that waits for review opens that label, not the next one in line.
 - OCR runs on RapidOCR directly instead of through Docling: no PyTorch, no layout model and no

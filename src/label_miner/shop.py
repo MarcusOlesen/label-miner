@@ -23,7 +23,7 @@ DEFAULT_TITLE_RE = re.compile(r"\bDefault Title\b", flags=re.IGNORECASE)
 
 # Warning categories that come from the webshop lookup. They are replaced as
 # a whole whenever the lookup runs again (e.g. after the user fixed a field).
-SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "variant", "not_found", "shop"}
+SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "variant", "not_found", "shop", "part"}
 
 
 def name_tokens(name: str) -> list[str]:
@@ -250,11 +250,12 @@ def look_up_product(
     """Find the label's product on the webshop.
 
     Fills in varenavn/price/url only when it is safe to do so without
-    anyone looking: the product was found via the label's own number,
-    exactly one variant contains every word of the label's name, and the
-    item isn't marked as only part of an item (those never get a price).
-    Everything else returns ``candidates`` for the user to choose from, plus
-    a warning that says what to check:
+    anyone looking: the product was found via the label's own number and
+    exactly one variant contains every word of the label's name. Only part
+    of an item (``part``, e.g. "1/2") gets its name and link that way but
+    never a price; a part that isn't confirmed like this also gets a
+    "part" warning. Everything else returns ``candidates`` for the user to
+    choose from, plus a warning that says what to check:
 
     - the number isn't on the shop but the name is -> offered, to confirm
       (the number is often a supplier code, e.g. "UE 45990201")
@@ -265,6 +266,20 @@ def look_up_product(
 
     Warnings are (category, message) tuples, category one of
     SHOP_WARNING_CATEGORIES."""
+    result, warnings = _look_up(session, cache, cache_lock, mk_varenummer, varenavn, part)
+    if part and not result["varenavn"]:
+        warnings.append(
+            (
+                "part",
+                f"Delvis vare (del {part}) - der sættes ingen pris. Tjek at labelen er læst rigtigt.",
+            )
+        )
+    return result, warnings
+
+
+def _look_up(
+    session, cache: dict, cache_lock: Lock, mk_varenummer: str, varenavn: str, part: str
+) -> tuple[dict, list[tuple[str, str]]]:
     result = {"varenavn": "", "price": "", "compare_price": "", "url": "", "candidates": []}
     label_tokens = name_tokens(varenavn)
     item_number = PART_SUFFIX_RE.sub("", (mk_varenummer or "").strip())
@@ -281,15 +296,12 @@ def look_up_product(
         ranked_variants = _rank_by_name(number_product["candidates"], label_tokens) if number_product else []
         match = _single_best_match(ranked_variants)
         if match is not None:
-            if part:
-                # Identified, but a part never gets a price - offer it so
-                # the user can confirm it with one click
-                result["candidates"] = [{**match, "found_by": "nummer"}]
-                return result, []
             result["varenavn"] = match["name"]
+            result["url"] = match["url"]
+            if part:
+                return result, []  # a part never gets a price
             result["price"] = match["price"]
             result["compare_price"] = match["compare_price"]
-            result["url"] = match["url"]
             warnings = [] if match["price"] else [("shop", "Kunne ikke læse aktuel pris på hjemmesiden")]
             return result, warnings
 

@@ -36,6 +36,18 @@ def test_part_of_item_never_gets_a_price(pipeline_results):
             assert result["parsed"]["price"].startswith("OBS: delvis vare")
 
 
+def test_part_of_item_confirmed_by_the_shop(pipeline_results):
+    """A part is approved when the shop confirms the item by number and name -
+    with the shop's name and link, and the note instead of a price."""
+    confirmed = pipeline_results["24-9/IMG_0285.HEIC"]
+    assert confirmed["warnings"] == []
+    assert confirmed["parsed"]["varenavn"] == "Vega sofabord, travertin marmor | 90x90"
+    assert "/products/vega-sofabord-travertin-marmor-90x90" in confirmed["parsed"]["url"]
+    assert confirmed["parsed"]["price"] == "OBS: delvis vare (del 1/2)"
+    unconfirmed = pipeline_results["24-9/IMG_0283.HEIC"]
+    assert "part" in {category for category, _ in unconfirmed["warnings"]}
+
+
 def test_sideways_labels_are_read_upright(pipeline_results):
     turned = {name for name, r in pipeline_results.items() if r["parsed"].get("photo_turn")}
     assert turned == {"15-9/IMG_9164.HEIC", "24-9/IMG_0285.HEIC"}
