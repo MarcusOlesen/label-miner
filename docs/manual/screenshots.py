@@ -54,7 +54,7 @@ DEMO = [
     ("24-9/IMG_0286.HEIC", "STAND missing"),
     ("24-9/IMG_0267.HEIC", "auto"),
     ("15-9/IMG_9176.HEIC", "odd STAND"),
-    ("24-9/IMG_0285.HEIC", "sideways, part of an item"),
+    ("24-9/IMG_0285.HEIC", "sideways, part of an item confirmed by the webshop"),
 ]
 
 

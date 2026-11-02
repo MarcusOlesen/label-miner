@@ -477,8 +477,8 @@ def build_story(export_rows):
         ],
         [
             "Delvis vare (del 1/2)",
-            "Labelen siger, at det kun er en del af varen. Der sættes aldrig pris, og i "
-            "kommentaren står <i>OBS: delvis vare</i>.",
+            "Kun en del af varen, og hjemmesiden kunne ikke bekræfte den på nummer og navn. "
+            "Der sættes aldrig pris, og i kommentaren står <i>OBS: delvis vare</i>.",
             "Tjek nummer og navn. Vælg gerne varen – så får den navn og link, men ingen pris.",
         ],
         [
@@ -757,7 +757,10 @@ def build_story(export_rows):
                             "Præcis én udgave passer til <i>alle</i> ord på labelen",
                             "farven mangler på labelen → Gennemse",
                         ],
-                        ["Det er ikke en delvis vare", "»1/2«, »2/2« → altid Gennemse"],
+                        [
+                            "Delvis vare (»1/2«, »2/2«): det samme",
+                            "men aldrig pris – <i>OBS: delvis vare</i>",
+                        ],
                     ],
                     [half * 0.55, half * 0.45],
                     ("good", "neutral"),

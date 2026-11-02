@@ -1,11 +1,5 @@
 # Changelog
 
-## Unreleased
-- Only part of an item ("1/2") is approved automatically when the webshop confirms the item by
-  its number and name, like any other label: it gets the shop's name and link, and "OBS: delvis
-  vare (del 1/2)" instead of a price. Other parts are still reviewed. On the 195 photos: 4 more
-  approved automatically, nothing else changed.
-
 ## 2.2 - 2026-11-02
 - Clicking a row that waits for review opens that label, not the next one in line.
 - OCR runs on RapidOCR directly instead of through Docling: no PyTorch, no layout model and no
@@ -18,7 +12,10 @@
   lines, with the centre-line limit retuned to 0.12 label widths.
 - An order number that isn't a number (also "#DE 2021"), FRA LAGER or LAGERVARE - for example
   "Uden ordre nr." - is sent to review.
-- Measured on 195 real photos against 2.1: nothing wrong is approved, 4 more labels are approved
+- Only part of an item ("1/2") is approved automatically when the webshop confirms the item by
+  its number and name, like any other label: it gets the shop's name and link, and "OBS: delvis
+  vare (del 1/2)" instead of a price. Other parts are still reviewed.
+- Measured on 195 real photos against 2.1: nothing wrong is approved, 8 more labels are approved
   automatically and 3 more are reviewed.
 - Code: clearer names in `ocr.py` and `shop.py`, and functions used only inside their own module
   start with `_`.
