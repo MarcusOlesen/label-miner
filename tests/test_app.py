@@ -15,6 +15,7 @@ import pytest
 
 from conftest import FIXTURES
 from harness import CachedOcrEngine, CachedSession
+from label_miner.choices import load_choices
 from label_miner.settings import load_settings
 
 pytestmark = pytest.mark.gui
@@ -103,5 +104,7 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         assert by_image["IMG_0302.HEIC"][1].startswith("Manhattan")  # the conflict, resolved
         assert by_image["IMG_0283.HEIC"][7] == "OBS: delvis vare (del 1/2)"  # part of an item: no price
         assert by_image["IMG_9164.HEIC"][1].startswith("Paris U-sofa")  # sideways, approved on its own
+        # The products picked in the reviews are remembered for next time (see choices.py)
+        assert any(choice["name"].startswith("Manhattan") for choice in load_choices().values())
     finally:
         root.destroy()

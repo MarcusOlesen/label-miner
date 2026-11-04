@@ -19,6 +19,15 @@
 - The 4-11 batch (28 new-design labels, 1 old) is in the test photos: every field of all 29 labels
   is read right, 3 are approved automatically (2 new, 1 old) and nothing wrong is approved.
 - The label guide shows the new design.
+- Remembered choices: when a label is approved in the review window with one of the webshop's
+  suggestions picked, that product is remembered for the label's number (supplier prefix
+  included) and name, in `%APPDATA%\Label Miner\choices.json`. The next label with the same
+  number and name - a repeating German label, a supplier code the shop doesn't know, a new label
+  without its colour - gets that product first, already selected and marked "valgt før (2
+  gange)", with today's price. It is only a suggestion: the label still goes to review, and a
+  label approved automatically is never changed by it. A remembered product the shop no longer
+  has, or has renamed, is not offered. Picking another product for the same label replaces the
+  remembered one. A typed price without a picked product is not remembered.
 - "Søg på hjemmesiden igen" with only an item number typed (no name) now fills in the fields: a
   product with one variant fills in name, price and link; several variants are all offered as
   cards. Before, an empty name matched nothing, so nothing was filled in. Such a result is only a

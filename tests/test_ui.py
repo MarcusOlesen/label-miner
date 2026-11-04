@@ -41,6 +41,7 @@ class FakeApp:
         self.open_standalone_windows = {}
         self.exported = False
         self.finished, self.retried = [], []
+        self.choices, self.remembered = {}, []
 
     def review_finished(self, record, updated):
         self.finished.append((record["path"].name, updated is not None))
@@ -50,6 +51,9 @@ class FakeApp:
 
     def upsert_result_row(self, *args):
         pass
+
+    def remember_choice(self, mk_varenummer, varenavn, candidate):
+        self.remembered.append((mk_varenummer, varenavn, candidate["id"]))
 
 
 @pytest.fixture
@@ -214,3 +218,41 @@ def test_typed_number_with_variants_offers_cards(review, dialogs, monkeypatch):
     window.select_candidate(0)
     assert window.entries["varenavn"].get() == window.candidates[0]["name"]
     assert window.entries["price"].get() == "899 kr (1.399 kr)"
+
+
+def test_approving_a_picked_product_remembers_it_under_the_label(review, dialogs):
+    window, app, record = review
+    window.load_record(record("4-11/IMG_0974.JPG"))  # Nord, no colour on the label
+    beige = next(i for i, c in enumerate(window.candidates) if c["name"].endswith("Beige"))
+    window.select_candidate(beige)
+    window.confirm()
+    # Under the label's own name - not the shop's, which replaced it in the field
+    assert app.remembered == [("103284", "Nord spisebordsstol", 54932797686137)]
+
+
+def test_typed_price_without_a_pick_is_not_remembered(review, dialogs):
+    window, app, record = review
+    window.load_record(record("4-11/IMG_0974.JPG"))
+    window.entries["price"].insert(0, "899 kr")
+    window.confirm()
+    assert app.remembered == []
+
+
+def test_remembered_product_is_selected_already(review, dialogs):
+    window, app, record = review
+    rec = record("4-11/IMG_0974.JPG")
+    remembered = {**rec["candidates"][1], "found_by": "valgt før", "chosen_before": 2}
+    rec["candidates"] = [remembered, rec["candidates"][0]]
+    window.load_record(rec)
+    assert window.selected_candidate is window.candidates[0]
+    assert window.entries["varenavn"].get() == remembered["name"]
+    assert window.entries["price"].get() == "899 kr (1.399 kr)"
+    assert not window.fields_changed()  # the pre-selection is not the user's edit
+    asked, _ = dialogs
+    window.skip()  # nothing to ask, nothing saved
+    assert asked == [] and rec["parsed"]["price"] == ""
+
+    window.load_record(rec)
+    window.confirm()  # one click: approved, and remembered once more under the label's name
+    assert app.remembered == [("103284", "Nord spisebordsstol", remembered["id"])]
+    assert rec["parsed"]["price"] == "899 kr (1.399 kr)" and rec["warnings"] == []

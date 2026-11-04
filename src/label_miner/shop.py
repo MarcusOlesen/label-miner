@@ -385,3 +385,23 @@ def _number_only(product: dict, item_number: str, part: str) -> tuple[dict, list
     return result, [
         ("by_number", f"Udfyldt ud fra nummeret {item_number} alene. Tjek at varen passer med labelen.")
     ]
+
+
+def remembered_candidate(session, cache: dict, cache_lock: Lock, choice: dict) -> Candidate | None:
+    """A remembered choice (see choices.py) as a suggestion, with today's
+    price - or None when the shop no longer has that variant, or it is now
+    called something else (the shop reorganised its products, so the old
+    choice may no longer be what the user picked)."""
+    handle = re.search(r"/products/([^?/]+)", choice["url"])
+    if handle is None:
+        return None
+    try:
+        product = _fetch_product(session, cache, cache_lock, handle.group(1))
+    except Exception:
+        return None
+    for candidate in product["candidates"]:
+        if candidate["id"] == choice["variant_id"]:
+            if name_tokens(candidate["name"]) != name_tokens(choice["name"]):
+                return None
+            return {**candidate, "found_by": "valgt før", "chosen_before": choice["count"]}
+    return None

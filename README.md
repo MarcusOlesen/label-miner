@@ -64,8 +64,9 @@ STAND: B
   via the label's number, that contains every word of the label's name. A name-only match, or a
   number and name that point to different products, becomes a question instead of a guess.
 - **Reviewing (`review.py`, `ui/`).** Each doubtful label gets one plain question in Danish, with
-  the webshop's likely products as picture cards. Nothing is saved until the user presses
-  "Godkend".
+  the webshop's likely products as picture cards. A product the user picked for the same label
+  (number and name) before comes first, already selected (`choices.py`) - a suggestion only.
+  Nothing is saved until the user presses "Godkend".
 
 ![The main window after a batch: labels approved automatically in green, labels waiting for review in orange](docs/images/main-window.png)
 
@@ -123,6 +124,7 @@ python -m label_miner                           # start the app (--debug prints 
 src/label_miner/
   config.py       constants: shop URL, sizes, workers, export columns, colours
   settings.py     the user's settings, kept in %APPDATA%\Label Miner\settings.json
+  choices.py      products the user picked for a label, suggested first next time
   ocr.py          OCR engine, text blocks, picking the label's lines
   parsing.py      the label's fields and warnings (pure functions)
   shop.py         webshop search and the matching rules

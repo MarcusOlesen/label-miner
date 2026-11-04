@@ -441,7 +441,9 @@ def build_story(export_rows):
                 Spacer(1, 8),
                 p(
                     "Under hver vare står, om den er fundet <i>via nummer</i> (nummeret på labelen) "
-                    "eller <i>via navn</i>. Står den der ikke, må du gerne skrive navn og pris selv.",
+                    "eller <i>via navn</i>. Står den der ikke, må du gerne skrive navn og pris selv. "
+                    "Har du valgt en vare til samme label før, står den øverst – <i>valgt før</i> – og "
+                    "er allerede valgt: tjek den, og godkend. Programmet godkender den aldrig selv.",
                     SMALL,
                 ),
             ],

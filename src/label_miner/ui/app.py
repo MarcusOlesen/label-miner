@@ -27,6 +27,7 @@ from ..batch import (
     load_images_from_zip,
     unique_export_path,
 )
+from ..choices import load_choices, remember_choice, save_choices
 from ..config import (
     APP_VERSION,
     COLOR_ERROR,
@@ -96,8 +97,9 @@ class LabelMinerApp:
 
         self.status = tk.StringVar(value="Indlæser OCR-modellerne...")
         self.selected_count = tk.StringVar(value="Valgte billeder: 0")
-        # Kept between runs (see settings.py)
+        # Kept between runs (see settings.py and choices.py)
         self.settings = load_settings()
+        self.choices = load_choices()
         # The export's STK: one per photo, or - when ticked - the label's Antal (see batch.pieces)
         self.stk_from_antal = tk.BooleanVar(value=self.settings["stk_from_antal"])
 
@@ -228,6 +230,13 @@ class LabelMinerApp:
             text="Slået fra: hvert billede tæller som 1 stk.",
             foreground=COLOR_MUTED,
         ).pack()
+
+    def remember_choice(self, mk_varenummer, varenavn, candidate):
+        """The user approved a label with this webshop product picked: offer
+        it first next time (see choices.py). Runs on the main thread; the
+        workers only read the dict."""
+        if remember_choice(self.choices, mk_varenummer, varenavn, candidate):
+            save_choices(self.choices)
 
     def _save_settings(self):
         self.settings["stk_from_antal"] = self.stk_from_antal.get()
@@ -480,6 +489,7 @@ class LabelMinerApp:
                 self.http_session,
                 self.price_cache,
                 self.price_cache_lock,
+                self.choices,
             )
         except Exception as error:
             raw_text = ""
@@ -917,6 +927,7 @@ class LabelMinerApp:
                 self.http_session,
                 self.price_cache,
                 self.price_cache_lock,
+                self.choices,
             )
             record.update(
                 raw_text=raw_text,
