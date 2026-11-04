@@ -55,7 +55,7 @@ NEW_DESIGN_RE = re.compile(r"\bVARENR\b|\bORDRE\s*NR\b")
 NEW_DESIGN_KEYWORD_RE = re.compile(r"\b(?:VARENR|ORDRE\s*NR|ANTAL|STAND)\b", flags=re.IGNORECASE)
 VARENR_RE = re.compile(r"\bVARENR\b\.?", flags=re.IGNORECASE)
 ORDRE_NR_RE = re.compile(r"\bORDRE\s*NR\b\.?", flags=re.IGNORECASE)
-ANTAL_RE = re.compile(r"\bANTAL\b\s*:?\s*(?P<antal>\d+)?", flags=re.IGNORECASE)
+ANTAL_RE = re.compile(r"\bANTAL\b\s*:?", flags=re.IGNORECASE)
 VALID_STANDS = {"A", "B", "C"}
 # An order number is a number (German orders: "#DE 2021"), or says the item
 # came from stock. Anything else ("Uden ordre nr.", stray text read into it)
@@ -142,7 +142,8 @@ def parse_label_fields(text: str) -> tuple[ParsedLabel, bool]:
 
     Returns (fields, keywords_missing): keywords_missing is True when the
     label's words (OUTLET and STAND; on the new design VARENR., ORDRE NR.,
-    Antal and Stand) weren't all found, so the split is less certain. The
+    Antal and Stand, each exactly once) weren't all found, so the split is
+    less certain. The
     STAND value is kept as printed even if it isn't A/B/C (e.g. "AP"), so
     the user sees what the label says.
     """
@@ -195,11 +196,20 @@ def _parse_new_design(text: str) -> tuple[ParsedLabel, bool]:
         parsed_label["mk_ordrenr"] = _clean_order_number(order_number)
     if stand is not None and stand["stand"]:
         parsed_label["stand"] = stand["stand"].upper()
-    if antal is not None and antal["antal"]:
-        parsed_label["antal"] = str(int(antal["antal"]))
+    if antal is not None:
+        # All of what follows Antal on its line must be the number: "1O"
+        # (24 read as) "2 4" or a smudge must not quietly become a quantity
+        antal_end = stand.start() if stand is not None and stand.start() > antal.end() else len(text)
+        value = text[antal.end() : antal_end].strip()
+        if value.isdigit() and int(value) > 0:
+            parsed_label["antal"] = str(int(value))
 
     parsed_label["part"] = item_part(parsed_label["mk_varenummer"], parsed_label["varenavn"])
-    keywords_missing = None in (varenr, ordre_nr, antal, stand)
+    # Each word exactly once: twice means two labels were read as one (stacked
+    # or side by side), and the second one would be lost
+    keywords_missing = any(
+        len(word.findall(text)) != 1 for word in (VARENR_RE, ORDRE_NR_RE, ANTAL_RE, STAND_RE)
+    )
     return parsed_label, keywords_missing
 
 
@@ -213,7 +223,10 @@ def label_warnings(parsed_label: ParsedLabel, keywords_missing: bool) -> list[Wa
     ]
     if keywords_missing:
         if "antal" in parsed_label:
-            message = "Fandt ikke alle ordene VARENR., ORDRE NR., Antal og Stand på labelen"
+            message = (
+                "Fandt ikke ordene VARENR., ORDRE NR., Antal og Stand præcis én gang hver - "
+                "er der mere end én label på billedet?"
+            )
         else:
             message = "Fandt ikke både OUTLET og STAND på labelen"
         warnings.append(("partial", message))

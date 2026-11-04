@@ -11,6 +11,8 @@ import pytest
 
 from label_miner.batch import (
     EXTRACT_OWNER_FILE,
+    STK_FROM_ANTAL,
+    STK_FROM_PHOTOS,
     clean_up_old_extract_dirs,
     derive_source_folder,
     excel_rows,
@@ -118,22 +120,46 @@ def test_excel_rows_groups_photos_of_the_same_item():
     assert items[3][7] == "Kunne ikke læse standen"
 
 
-def test_stk_is_the_labels_antal_never_summed():
+def test_stk_from_antal_adds_each_labels_antal():
     records = [
         # One photo of a label for 24 chairs
         record("IMG_1.JPG", "103485", "Lager", "A", antal="24"),
-        # Two photos of the same item's labels, both "Antal: 2": the same two chairs
-        record("IMG_2.JPG", "102249", "154908", "A", antal="2"),
-        record("IMG_3.JPG", "102249", "154908", "A", antal="2"),
-        # Antal not read (or left empty): one piece per photo, as for old labels
-        record("IMG_4.JPG", "105599", "132940", "B", antal=""),
-        record("IMG_5.JPG", "105599", "132940", "B", antal=""),
+        # Two photos of the same item, each label "Antal: 1": two pieces
+        record("IMG_2.JPG", "105599", "132940", "B", antal="1"),
+        record("IMG_3.JPG", "105599", "132940", "B", antal="1"),
+        # Antal not read: that photo adds one
+        record("IMG_4.JPG", "102138", "153446", "A", antal=""),
+        # An old label has no Antal: one per photo, as before
+        record("IMG_5.HEIC", "101338", "200101", "A"),
         record("IMG_6.HEIC", "101338", "200101", "A"),
     ]
-    items = excel_rows(records, "4-11")[1:]
+    items = excel_rows(records, "4-11", STK_FROM_ANTAL)[1:]
     assert [(row[2], row[5]) for row in items] == [
         ("103485", 24),
-        ("102249", 2),
         ("105599", 2),
-        ("101338", 1),
+        ("102138", 1),
+        ("101338", 2),
     ]
+    assert all("tjek STK" not in row[7] for row in items)
+
+
+def test_stk_from_photos_counts_photos_whatever_antal_says():
+    records = [
+        record("IMG_1.JPG", "103485", "Lager", "A", antal="24"),
+        record("IMG_2.JPG", "102249", "154908", "A", antal="2"),
+        record("IMG_3.JPG", "102249", "154908", "A", antal="2"),
+    ]
+    items = excel_rows(records, "4-11", STK_FROM_PHOTOS)[1:]
+    assert [(row[2], row[5]) for row in items] == [("103485", 1), ("102249", 2)]
+
+
+def test_stk_from_antal_flags_a_possible_double_count():
+    """Two photos of the same item, both "Antal: 2": two labels for the same
+    two chairs, or two pairs? STK says 4, and the comment asks to check it."""
+    records = [
+        record("IMG_2.JPG", "102249", "154908", "A", price="999 kr", antal="2"),
+        record("IMG_3.JPG", "102249", "154908", "A", price="999 kr", antal="2"),
+    ]
+    [item] = excel_rows(records, "4-11", STK_FROM_ANTAL)[1:]
+    assert item[5] == 4
+    assert item[7] == "999 kr | OBS: 2 billeder af samme vare med Antal - tjek STK"

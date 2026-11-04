@@ -55,7 +55,8 @@ STAND: B
   then ordered by their position on the label. Sideways labels are detected from the same geometry
   and read a second time, turned upright.
 - **Parsing (`parsing.py`).** A new label's fields are read after their own words, and
-  **Antal** becomes STK in the export (the largest Antal of the item's photos, never the sum).
+  **Antal** feeds STK in the export: each photo adds its label's Antal, or - the user's choice -
+  one per photo.
   This handles the number formats found on real labels: MK numbers, parts of an item
   (`101338_1/2`) and supplier codes (`UE 45990201`, `VN 19987-330`). It also undoes the OCR
   slips that are safe to undo.

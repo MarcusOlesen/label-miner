@@ -471,8 +471,7 @@ def fotoguide():
             "Gå <b>tæt på</b>, så labelen fylder det meste af billedet.",
             "Hold telefonen <b>retvendt</b> og lige på labelen – ikke på siden eller skråt.",
             "Hold telefonen stille, og <b>tryk på labelen</b> på skærmen, så den er skarp.",
-            "<b>Ét billede pr. label.</b> STK er labelens Antal; på gamle labels uden Antal "
-            "tælles to billeder af samme vare som STK = 2.",
+            "<b>Ét billede pr. label.</b> STK er labelens Antal – to billeder af samme label tælles dobbelt.",
         ],
     )
     avoid = (

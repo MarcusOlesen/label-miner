@@ -129,6 +129,26 @@ def test_new_design_without_antal_is_reviewed():
     assert ("missing", "Kunne ikke læse antallet") in label_warnings(parsed, keywords_missing)
 
 
+@pytest.mark.parametrize("antal", ["Antal: 1O", "Antal: 2 4", "Antal: l", "Antal: 0", "Antal:"])
+def test_new_design_unclear_antal_is_not_guessed(antal):
+    parsed, keywords_missing = parse_label_fields(
+        f"OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 {antal} Stand: B"
+    )
+    assert parsed["antal"] == ""
+    assert ("missing", "Kunne ikke læse antallet") in label_warnings(parsed, keywords_missing)
+
+
+def test_new_design_two_labels_in_one_photo_are_reviewed():
+    # Two labels one above the other: the first label's fields read fine,
+    # but the second label would silently be lost
+    parsed, keywords_missing = parse_label_fields(
+        "OUTLET·VARENR. 102686 Como puf ORDRE NR. 141807 Antal: 1 Stand: B "
+        "OUTLET·VARENR. 106854 Oris sofabord ORDRE NR. 157498 Stand: A Antal:1"
+    )
+    assert keywords_missing
+    assert "partial" in {category for category, _ in label_warnings(parsed, keywords_missing)}
+
+
 def test_old_design_has_no_antal():
     parsed, keywords_missing = parse_label_fields("103297, Holdbar spisebord OUTLET 152406 STAND:B")
     assert "antal" not in parsed

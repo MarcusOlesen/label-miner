@@ -20,6 +20,8 @@ except ImportError:  # optional: drag and drop
     DND_FILES = None
     TkinterDnD = None
 from ..batch import (
+    STK_FROM_ANTAL,
+    STK_MODES,
     clean_up_old_extract_dirs,
     derive_source_folder,
     excel_rows,
@@ -95,6 +97,8 @@ class LabelMinerApp:
 
         self.status = tk.StringVar(value="Indlæser OCR-modellerne...")
         self.selected_count = tk.StringVar(value="Valgte billeder: 0")
+        # How the export counts STK (see batch.pieces)
+        self.stk_mode = tk.StringVar(value=STK_FROM_ANTAL)
 
         # The window shows one of three "screens" at a time: a boot screen
         # while the OCR models load, a select screen with one big button,
@@ -308,6 +312,13 @@ class LabelMinerApp:
             style=accent_button_style(),
         )
         self.copy_button.pack(side="left")
+        stk_choice = ttk.Frame(self.actions_buttons)
+        stk_choice.pack(side="left", padx=(24, 0))
+        ttk.Label(stk_choice, text="STK tælles efter:").pack(side="left")
+        for mode, text in STK_MODES.items():
+            ttk.Radiobutton(
+                stk_choice, text=text, value=mode, variable=self.stk_mode, command=self._stk_mode_changed
+            ).pack(side="left", padx=(8, 0))
 
         ttk.Separator(self.work_frame, orient="horizontal").pack(fill="x", pady=(12, 6))
         ttk.Label(self.work_frame, textvariable=self.status, foreground=COLOR_MUTED).pack(anchor="w")
@@ -830,7 +841,7 @@ class LabelMinerApp:
             workbook = Workbook()
             worksheet = workbook.active
             worksheet.title = "Label Miner"
-            rows = excel_rows(self.records, self.source_folder_name)
+            rows = excel_rows(self.records, self.source_folder_name, self.stk_mode.get())
             worksheet.append(rows[0])
             worksheet.append(EXCEL_COLUMNS)
             for row in rows[1:]:
@@ -846,8 +857,13 @@ class LabelMinerApp:
         self.status.set(f"Færdig. Excel gemt: {self.export_path.name}")
         self.export_ready_label.configure(text=f"✅ Excel gemt: {self.export_path.name}", foreground=COLOR_OK)
 
+    def _stk_mode_changed(self):
+        """Save the spreadsheet again with STK counted the new way."""
+        if self.exported:
+            self.auto_export_excel()
+
     def _copy_result(self):
-        rows = excel_rows(self.records, self.source_folder_name)
+        rows = excel_rows(self.records, self.source_folder_name, self.stk_mode.get())
         values = ["\t".join(str(value) for value in row[: len(COPY_COLUMNS)]) for row in rows]
         self.root.clipboard_clear()
         self.root.clipboard_append("\n".join(values))

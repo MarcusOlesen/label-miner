@@ -6,10 +6,14 @@
   label (VARENR. or ORDRE NR. in capitals mean the new one). The new design's lines are those that
   start inside the area its words mark out, measured along the label's own lines, so box print,
   handwriting and a tilted, curved or sideways label are handled. Old labels are read as before.
-- "Antal" is read and becomes STK in the export. Photos of the same item (number, order number,
-  STAND) still make one row; STK is the largest Antal among them, never the sum, as Antal is the
-  whole order line's quantity. Old labels without Antal count one piece per photo, as before.
-  The review window has an Antal field; a new label without a readable Antal is reviewed.
+- "Antal" is read, and the main window has a choice of how STK is counted ("STK tælles efter"):
+  "Antal på labelen" (the default) - each photo adds its label's Antal - or "Antal billeder" -
+  each photo adds one, as before. Photos of the same item (number, order number, STAND) still make
+  one row. Changing the choice saves the spreadsheet again. When several photos of one item say
+  Antal 2 or more, the comments column asks to check STK, as the same pieces may be counted twice.
+  The review window has an Antal field. A new label is reviewed when its Antal can't be read as a
+  whole number ("1O", "2 4"), or when one of its words appears twice - two labels in one photo,
+  where the second would otherwise be lost.
 - An "à" in the name is read as "å" (RapidOCR reads "Blå" as "Blà").
 - The 4-11 batch (28 new-design labels, 1 old) is in the test photos: every field of all 29 labels
   is read right, 3 are approved automatically (2 new, 1 old) and nothing wrong is approved.
