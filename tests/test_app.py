@@ -62,6 +62,7 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
     try:
         app = app_module.LabelMinerApp(root)
         app.http_session = CachedSession(FIXTURES / "shop")
+        assert app.stk_from_antal.get() is False  # STK = one per photo unless the user ticks it
         app.ocr_engine_ready()
         app.begin_processing(sorted(batch.iterdir()))
         run_until(root, lambda: not app.processing and app.work_completed >= len(photos))

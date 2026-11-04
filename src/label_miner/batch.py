@@ -156,47 +156,40 @@ def unique_export_path(directory: Path, base_name: str) -> Path:
         counter += 1
 
 
-# How STK is counted for photos of the same item (same MK number, order
-# number and STAND); the user picks it in the main window
-STK_FROM_ANTAL = "antal"  # each photo adds its label's Antal
-STK_FROM_PHOTOS = "photos"  # each photo adds one
-STK_MODES = {STK_FROM_ANTAL: "Antal på labelen", STK_FROM_PHOTOS: "Antal billeder"}
-
-
 def _antal(record: dict) -> int | None:
     value = record["parsed"].get("antal", "")
     return int(value) if value.isdigit() and int(value) > 0 else None
 
 
-def pieces(records: list[dict], stk_mode: str = STK_FROM_ANTAL) -> int:
+def pieces(records: list[dict], stk_from_antal: bool = False) -> int:
     """STK for photos of one item.
 
-    STK_FROM_ANTAL: each photo adds the Antal printed on its label (one
-    photo per label, a label per order line). A photo whose label has no
-    Antal - the old design, or not read - adds one.
-    STK_FROM_PHOTOS: each photo adds one (one photo per piece), as before
-    labels had Antal."""
-    if stk_mode == STK_FROM_PHOTOS:
+    By default each photo is one piece. With stk_from_antal (a setting on
+    the start screen, off by default) each photo is as many pieces as its
+    label's Antal says - for when one photo is taken per label rather than
+    per piece; a label without Antal (the old design, or not read) counts
+    one."""
+    if not stk_from_antal:
         return len(records)
     return sum(_antal(record) or 1 for record in records)
 
 
-def _stk_note(records: list[dict], stk_mode: str) -> str:
+def _stk_note(records: list[dict], stk_from_antal: bool) -> str:
     """A comment when STK may count the same pieces twice: several photos of
     one item whose labels say Antal 2+ - a retake, or each piece's label
     showing the whole order line's Antal."""
-    if stk_mode != STK_FROM_ANTAL or len(records) < 2:
+    if not stk_from_antal or len(records) < 2:
         return ""
     if not any((_antal(record) or 1) > 1 for record in records):
         return ""
     return f"OBS: {len(records)} billeder af samme vare med Antal - tjek STK"
 
 
-def excel_rows(records: list[dict], batch_name: str, stk_mode: str = STK_FROM_ANTAL) -> list[list]:
+def excel_rows(records: list[dict], batch_name: str, stk_from_antal: bool = False) -> list[list]:
     """The export's rows: the batch name, then one row per item.
 
     Photos of the same item (same MK number, order number and STAND) become
-    one row, with STK counted as stk_mode says (see pieces). Rows whose three fields are all
+    one row, with STK counted as stk_from_antal says (see pieces). Rows whose three fields are all
     empty (e.g. an unreadable photo) are never merged, as they can't be told
     apart. Warnings left on a record go into the comments column, so an
     unchecked row is visible in the sheet.
@@ -216,7 +209,7 @@ def excel_rows(records: list[dict], batch_name: str, stk_mode: str = STK_FROM_AN
         record = group["first"]
         parsed = record["parsed"]
         warning_text = " | ".join(warning_messages(record.get("warnings") or []))
-        stk_note = _stk_note(group["records"], stk_mode)
+        stk_note = _stk_note(group["records"], stk_from_antal)
         comments = " | ".join(value for value in (parsed.get("price", ""), warning_text, stk_note) if value)
         rows.append(
             [
@@ -225,7 +218,7 @@ def excel_rows(records: list[dict], batch_name: str, stk_mode: str = STK_FROM_AN
                 parsed.get("mk_varenummer", ""),
                 parsed.get("mk_ordrenr", ""),
                 parsed.get("stand", ""),
-                pieces(group["records"], stk_mode),
+                pieces(group["records"], stk_from_antal),
                 "X",
                 comments,
                 "",

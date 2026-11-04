@@ -471,7 +471,8 @@ def fotoguide():
             "Gå <b>tæt på</b>, så labelen fylder det meste af billedet.",
             "Hold telefonen <b>retvendt</b> og lige på labelen – ikke på siden eller skråt.",
             "Hold telefonen stille, og <b>tryk på labelen</b> på skærmen, så den er skarp.",
-            "<b>Ét billede pr. label.</b> STK er labelens Antal – to billeder af samme label tælles dobbelt.",
+            "<b>Ét billede pr. vare.</b> To billeder af samme vare tælles som STK = 2 "
+            "(med <i>STK = labelens Antal</i> slået til: ét billede pr. label).",
         ],
     )
     avoid = (
@@ -562,7 +563,7 @@ def labelguide():
 
     how = M.note(
         "<b>Sådan læser programmet labelen:</b> ordene <b>VARENR.</b>, <b>ORDRE NR.</b>, <b>Antal</b> "
-        "og <b>Stand</b> viser, hvor hvert felt står. Antal bliver til STK i regnearket. Gamle, "
+        "og <b>Stand</b> viser, hvor hvert felt står. Gamle, "
         "centrerede labels (OUTLET og STAND uden VARENR.) læses stadig."
     )
 
