@@ -8,7 +8,8 @@
   handwriting and a tilted, curved or sideways label are handled. Old labels are read as before.
 - "Antal" is read. STK is still one per photo by default; a setting on the start screen, "STK =
   labelens Antal", makes each photo count as its label's Antal instead (for one photo per label
-  rather than per piece; a label without Antal counts one). Photos of the same item (number, order
+  rather than per piece; a label without Antal counts one). The setting is remembered between
+  runs, in `%APPDATA%\Label Miner\settings.json` - the app's first saved setting. Photos of the same item (number, order
   number, STAND) still make one row. With the setting on, when several photos of one item say
   Antal 2 or more, the comments column asks to check STK, as the same pieces may be counted twice.
   The review window has an Antal field. A new label is reviewed when its Antal can't be read as a

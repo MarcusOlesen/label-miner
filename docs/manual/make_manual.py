@@ -632,7 +632,7 @@ def build_story(export_rows):
                 note(
                     "Er den samme vare fotograferet flere gange, bliver den til én række. "
                     "<b>STK</b> = antal billeder. Er <i>STK = labelens Antal</i> slået til på "
-                    "startskærmen, tæller hvert billede i stedet som labelens Antal."
+                    "startskærmen, tæller hvert billede i stedet som labelens Antal. Valget huskes."
                 ),
             ],
             img_w,

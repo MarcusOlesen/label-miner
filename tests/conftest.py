@@ -53,3 +53,9 @@ def dialogs(monkeypatch):
     for kind in ("askyesno", "askyesnocancel", "askokcancel"):
         monkeypatch.setattr(review_window.messagebox, kind, fake(kind))
     return asked, answers
+
+
+@pytest.fixture(autouse=True)
+def own_settings_file(tmp_path, monkeypatch):
+    """The tests never read or write the user's real settings (see label_miner.settings)."""
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))

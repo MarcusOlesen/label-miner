@@ -121,7 +121,8 @@ python -m label_miner                           # start the app (--debug prints 
 
 ```
 src/label_miner/
-  config.py       settings: shop URL, sizes, workers, export columns, colours
+  config.py       constants: shop URL, sizes, workers, export columns, colours
+  settings.py     the user's settings, kept in %APPDATA%\Label Miner\settings.json
   ocr.py          OCR engine, text blocks, picking the label's lines
   parsing.py      the label's fields and warnings (pure functions)
   shop.py         webshop search and the matching rules

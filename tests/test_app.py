@@ -15,6 +15,7 @@ import pytest
 
 from conftest import FIXTURES
 from harness import CachedOcrEngine, CachedSession
+from label_miner.settings import load_settings
 
 pytestmark = pytest.mark.gui
 
@@ -63,6 +64,11 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         app = app_module.LabelMinerApp(root)
         app.http_session = CachedSession(FIXTURES / "shop")
         assert app.stk_from_antal.get() is False  # STK = one per photo unless the user ticks it
+        app.stk_from_antal.set(True)
+        app._save_settings()  # what ticking the box does: remembered for the next run
+        assert load_settings()["stk_from_antal"] is True
+        app.stk_from_antal.set(False)
+        app._save_settings()
         app.ocr_engine_ready()
         app.begin_processing(sorted(batch.iterdir()))
         run_until(root, lambda: not app.processing and app.work_completed >= len(photos))
