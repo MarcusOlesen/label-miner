@@ -149,9 +149,14 @@ def score(answer: dict, parsed: dict, warnings: list, candidates: list) -> tuple
       "REVIEW ok" sent to review, as the answer key expects
       "REVIEW"    sent to review although it could have been approved (annoying, not dangerous)
     For reviews, a problem is also recorded when the right product isn't among the suggestions.
+    The answer's "shop" is the product (handle, and variant when the label
+    tells it), null when it isn't on the shop, or "unknown" when the
+    recordings can't tell - then only the label's fields are scored, and an
+    automatic approval counts as WRONG, as it can't be checked. "antal" is
+    only in the answers for the new label design.
     """
     problems = []
-    for field in LABEL_FIELDS:
+    for field in LABEL_FIELDS + (("antal",) if "antal" in answer else ()):
         if _compact(parsed.get(field)) != _compact(answer[field]):
             problems.append(f"{field}: read {parsed.get(field)!r}, label says {answer[field]!r}")
 
@@ -159,7 +164,9 @@ def score(answer: dict, parsed: dict, warnings: list, candidates: list) -> tuple
     if not warnings:  # approved automatically
         if answer["expect"] == "review":
             problems.append(f"should have gone to review ({answer.get('reason', '')})")
-        if shop is None:
+        if shop == "unknown":
+            problems.append("approved, but the right product is unknown, so it can't be checked")
+        elif shop is None:
             if parsed.get("price") or parsed.get("url"):
                 problems.append("product is not on the shop, but a price/URL was filled in")
         else:
@@ -174,7 +181,7 @@ def score(answer: dict, parsed: dict, warnings: list, candidates: list) -> tuple
     # In a review the user sees the name as read from the label
     if _name_words(parsed.get("varenavn")) != _name_words(answer["varenavn"]):
         problems.append(f"varenavn: read {parsed.get('varenavn')!r}, label says {answer['varenavn']!r}")
-    if shop is not None:
+    if shop not in (None, "unknown"):
         offered = (
             any(
                 (shop.get("variant") and c.get("id") == shop["variant"])

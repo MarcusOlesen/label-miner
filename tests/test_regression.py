@@ -50,7 +50,14 @@ def test_part_of_item_confirmed_by_the_shop(pipeline_results):
 
 def test_sideways_labels_are_read_upright(pipeline_results):
     turned = {name for name, r in pipeline_results.items() if r["parsed"].get("photo_turn")}
-    assert turned == {"15-9/IMG_9164.HEIC", "24-9/IMG_0285.HEIC"}
+    assert turned == {
+        "15-9/IMG_9164.HEIC",
+        "24-9/IMG_0285.HEIC",
+        "4-11/IMG_0980.JPG",
+        "4-11/IMG_0981.JPG",
+        "4-11/IMG_0986.JPG",
+        "4-11/IMG_0987.JPG",
+    }
 
 
 def test_review_reasons(pipeline_results):
@@ -62,3 +69,30 @@ def test_review_reasons(pipeline_results):
     assert "by_name" in categories("24-9/IMG_0275.HEIC")  # supplier code, found by its name
     assert "conflict" in categories("24-9/IMG_0302.HEIC")  # the number is another product
     assert "not_found" in categories("24-9/IMG_0296.HEIC")
+
+
+def test_both_label_designs_in_one_batch(answers, pipeline_results):
+    """The 4-11 batch has 28 labels in the new design and one in the old:
+    each is read with its own layout, and every field of every label is
+    read right - whatever the webshop says."""
+    batch = {name: r for name, r in pipeline_results.items() if name.startswith("4-11/")}
+    assert len(batch) == 29
+    for name, result in batch.items():
+        answer, parsed = answers[name], result["parsed"]
+        fields = ["mk_varenummer", "mk_ordrenr", "stand"] + (["antal"] if answer["design"] == "new" else [])
+        assert {field: parsed[field] for field in fields} == {field: answer[field] for field in fields}, name
+        assert ("antal" in parsed) == (answer["design"] == "new"), name
+        assert not [message for category, message in result["warnings"] if category in ("missing", "partial")]
+    assert pipeline_results["4-11/IMG_0983.JPG"]["warnings"] == []  # the old design, approved as before
+
+
+def test_new_design_without_colour_asks_for_the_variant(pipeline_results):
+    """New labels often leave out the colour: the shop's variants are
+    offered, never guessed."""
+    nord = pipeline_results["4-11/IMG_0974.JPG"]
+    assert {category for category, _ in nord["warnings"]} == {"variant"}
+    assert sorted(candidate["name"] for candidate in nord["candidates"]) == [
+        "Nord spisebordsstol Beige",
+        "Nord spisebordsstol Taupe",
+    ]
+    assert nord["parsed"]["price"] == ""

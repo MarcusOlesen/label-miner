@@ -90,9 +90,11 @@ def test_format_duration(seconds, text):
     assert format_duration(seconds) == text
 
 
-def record(name, number="", order="", stand="", price="", warnings=()):
+def record(name, number="", order="", stand="", price="", warnings=(), antal=None):
     parsed = {"varenavn": "Vega sofa", "mk_varenummer": number, "mk_ordrenr": order, "stand": stand}
     parsed["price"] = price
+    if antal is not None:  # only the new label design has it
+        parsed["antal"] = antal
     return {"path": Path(name), "parsed": parsed, "warnings": list(warnings)}
 
 
@@ -114,3 +116,24 @@ def test_excel_rows_groups_photos_of_the_same_item():
     assert items[0][7] == "8.999 kr"
     # A warning left on a record ends up in the comments column
     assert items[3][7] == "Kunne ikke læse standen"
+
+
+def test_stk_is_the_labels_antal_never_summed():
+    records = [
+        # One photo of a label for 24 chairs
+        record("IMG_1.JPG", "103485", "Lager", "A", antal="24"),
+        # Two photos of the same item's labels, both "Antal: 2": the same two chairs
+        record("IMG_2.JPG", "102249", "154908", "A", antal="2"),
+        record("IMG_3.JPG", "102249", "154908", "A", antal="2"),
+        # Antal not read (or left empty): one piece per photo, as for old labels
+        record("IMG_4.JPG", "105599", "132940", "B", antal=""),
+        record("IMG_5.JPG", "105599", "132940", "B", antal=""),
+        record("IMG_6.HEIC", "101338", "200101", "A"),
+    ]
+    items = excel_rows(records, "4-11")[1:]
+    assert [(row[2], row[5]) for row in items] == [
+        ("103485", 24),
+        ("102249", 2),
+        ("105599", 2),
+        ("101338", 1),
+    ]

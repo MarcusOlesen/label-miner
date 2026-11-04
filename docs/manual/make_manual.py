@@ -630,8 +630,8 @@ def build_story(export_rows):
                     W - img_w - GAP,
                 ),
                 note(
-                    "Er den samme vare fotograferet flere gange, bliver den til én række med "
-                    "<b>STK</b> = antal billeder."
+                    "Er den samme vare fotograferet flere gange, bliver den til én række. "
+                    "<b>STK</b> er labelens <b>Antal</b> – på gamle labels uden Antal: antal billeder."
                 ),
             ],
             img_w,
@@ -777,7 +777,7 @@ def build_story(export_rows):
                 colour_table(
                     ["På labelen", "Hvad sker der"],
                     [
-                        ["»- 6 stk.« efter navnet", "Bruges ikke. STK tælles ud fra antal billeder."],
+                        ["»- 6 stk.« efter navnet", "Bruges ikke. STK er labelens Antal."],
                         ["Håndskrift, fx »1stk«", "Ignoreres."],
                         ["Andre klistermærker og tekst på kassen", "Ignoreres – kun selve labelen læses."],
                         ["Tekst under STAND, fx »(forkert vare sendt)«", "Ignoreres."],

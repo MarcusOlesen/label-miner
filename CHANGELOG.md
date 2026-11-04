@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+- The new label design (left-aligned, "OUTLET · VARENR.", "ORDRE NR.", "Antal" and "Stand") is
+  read. Both designs are supported side by side: each photo's design is told by the words on the
+  label (VARENR. or ORDRE NR. in capitals mean the new one). The new design's lines are those that
+  start inside the area its words mark out, measured along the label's own lines, so box print,
+  handwriting and a tilted, curved or sideways label are handled. Old labels are read as before.
+- "Antal" is read and becomes STK in the export. Photos of the same item (number, order number,
+  STAND) still make one row; STK is the largest Antal among them, never the sum, as Antal is the
+  whole order line's quantity. Old labels without Antal count one piece per photo, as before.
+  The review window has an Antal field; a new label without a readable Antal is reviewed.
+- An "à" in the name is read as "å" (RapidOCR reads "Blå" as "Blà").
+- The 4-11 batch (28 new-design labels, 1 old) is in the test photos: every field of all 29 labels
+  is read right, 3 are approved automatically (2 new, 1 old) and nothing wrong is approved.
+- The label guide shows the new design.
+
 ## 2.2 - 2026-11-02
 - Clicking a row that waits for review opens that label, not the next one in line.
 - OCR runs on RapidOCR directly instead of through Docling: no PyTorch, no layout model and no

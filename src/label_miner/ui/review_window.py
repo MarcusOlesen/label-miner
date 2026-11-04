@@ -294,7 +294,9 @@ class ReviewWindow:
         self._add_entry(fields, 1, "Varenavn", "varenavn")
         self._add_entry(fields, 2, "MK ordrenr", "mk_ordrenr")
         self._add_entry(fields, 3, "Stand", "stand")
-        self._add_entry(fields, 4, "Pris / kommentar", "price")
+        # Printed only on the new label design; STK in the export (see batch.pieces)
+        self._add_entry(fields, 4, "Antal", "antal")
+        self._add_entry(fields, 5, "Pris / kommentar", "price")
         self.loaded_fields = {}
 
         # Re-runs just the webshop lookup with whatever's currently typed
@@ -820,6 +822,11 @@ class ReviewWindow:
             + " Den skal normalt være A, B eller C.\n\nGodkend alligevel?",
             parent=self.window,
         ):
+            return
+        if fields["antal"] and not fields["antal"].isdigit():
+            messagebox.showwarning(
+                "Tjek Antal", "Antal skal være et tal, fx 2 – eller tomt.", parent=self.window
+            )
             return
         is_part = bool(
             item_part(fields["mk_varenummer"], fields["varenavn"]) or self.record["parsed"].get("part")

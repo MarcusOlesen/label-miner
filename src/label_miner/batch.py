@@ -156,11 +156,23 @@ def unique_export_path(directory: Path, base_name: str) -> Path:
         counter += 1
 
 
+def pieces(records: list[dict]) -> int:
+    """STK for photos of one item: the label's own "Antal" when it has one
+    (the new design), else one piece per photo (the old design).
+
+    Antal is the quantity of the whole order line, so more photos of the
+    same item's labels - a retake, or a label on each of the pieces - are
+    the same pieces again: the largest Antal counts, never the sum."""
+    antal = [record["parsed"].get("antal", "") for record in records]
+    antal = [int(value) for value in antal if value.isdigit() and int(value) > 0]
+    return max(antal) if antal else len(records)
+
+
 def excel_rows(records: list[dict], batch_name: str) -> list[list]:
     """The export's rows: the batch name, then one row per item.
 
     Photos of the same item (same MK number, order number and STAND) become
-    one row with STK = the number of photos. Rows whose three fields are all
+    one row. STK is the number of pieces (see pieces). Rows whose three fields are all
     empty (e.g. an unreadable photo) are never merged, as they can't be told
     apart. Warnings left on a record go into the comments column, so an
     unchecked row is visible in the sheet.
@@ -172,8 +184,8 @@ def excel_rows(records: list[dict], batch_name: str) -> list[list]:
         key = (parsed.get("mk_varenummer", ""), parsed.get("mk_ordrenr", ""), parsed.get("stand", ""))
         if not any(key):
             key = ("__unique__", id(record))
-        group = groups.setdefault(key, {"first": record, "count": 0, "image_names": []})
-        group["count"] += 1
+        group = groups.setdefault(key, {"first": record, "records": [], "image_names": []})
+        group["records"].append(record)
         group["image_names"].append(record["path"].name)
 
     for group in groups.values():
@@ -190,7 +202,7 @@ def excel_rows(records: list[dict], batch_name: str) -> list[list]:
                 parsed.get("mk_varenummer", ""),
                 parsed.get("mk_ordrenr", ""),
                 parsed.get("stand", ""),
-                group["count"],
+                pieces(group["records"]),
                 "X",
                 comments,
                 "",

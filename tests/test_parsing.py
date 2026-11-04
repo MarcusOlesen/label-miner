@@ -2,7 +2,7 @@
 
 import pytest
 
-from label_miner.parsing import item_part, label_warnings, parse_label_fields
+from label_miner.parsing import is_new_design, item_part, label_warnings, parse_label_fields
 from label_miner.shop import name_tokens, token_coverage
 
 # (OCR text in reading order) -> (MK number, name, order number, STAND, part of item)
@@ -58,6 +58,81 @@ PARSE_CASES = [
         id="unusual STAND kept as printed",
     ),
 ]
+
+
+# The new design: (OCR text in reading order) -> (MK number, name, order
+# number, STAND, part of item, antal). Real OCR output from the 4-11 photos.
+NEW_DESIGN_CASES = [
+    pytest.param(
+        "OUTLET·VARENR. 103469 Roots sofabord, 080 ORDRE NR. 156146 Stand: B Antal:1",
+        ("103469", "Roots sofabord, Ø80", "156146", "B", "", "1"),
+        id="plain",
+    ),
+    pytest.param(
+        "OUTLET·VARENR. VN 61248-103 Vince tæppe, 230x160 ORDRE NR. 156950 Stand: A Antal:1",
+        ("VN 61248-103", "Vince tæppe, 230x160", "156950", "A", "", "1"),
+        id="supplier code",
+    ),
+    pytest.param(
+        "OUTLET·VARENR. AY 0000108453 Cholet sengebord, væghængt | vild eg ORDRE NR. 154165 Antal:1 Stand: B",
+        ("AY 0000108453", "Cholet sengebord, væghængt | vild eg", "154165", "B", "", "1"),
+        id="supplier code, Antal before Stand",
+    ),
+    pytest.param(
+        "OUTLET·VARENR. 103162_1/2 1/2 Palermo chaiselong sofa, venstrevendt - Aragon Blà "
+        "ORDRE NR. 124504 Antal:1 Stand: C",
+        ("103162_1/2", "1/2 Palermo chaiselong sofa, venstrevendt - Aragon Blå", "124504", "C", "1/2", "1"),
+        id="part of an item, name over two lines, å read as à",
+    ),
+    pytest.param(
+        "OUTLET·VARENR. 103485 Curve spisebordsstol ORDRE NR. Lager Antal: 24 Stand: A",
+        ("103485", "Curve spisebordsstol", "Lager", "A", "", "24"),
+        id="from stock",
+    ),
+    pytest.param(
+        "OUTLET·VARENR. 102511 Plint spisebord, inkl. tillægsplade | 200/250x100 ORDRENR. 152973 "
+        "Antal:1 Stand: B",
+        ("102511", "Plint spisebord, inkl. tillægsplade | 200/250x100", "152973", "B", "", "1"),
+        id="ORDRE NR. read without the space",
+    ),
+]
+
+
+@pytest.mark.parametrize(("text", "expected"), NEW_DESIGN_CASES)
+def test_parse_new_design(text, expected):
+    parsed, keywords_missing = parse_label_fields(text)
+    fields = ("mk_varenummer", "varenavn", "mk_ordrenr", "stand", "part", "antal")
+    assert tuple(parsed[k] for k in fields) == expected
+    assert not keywords_missing
+    assert label_warnings(parsed, keywords_missing) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "new"),
+    [
+        ("OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 Stand: B Antal:1", True),
+        ("103469 Roots sofabord ORDRE NR. 156146 Stand: B Antal:1", True),  # OUTLET·VARENR. not read
+        ("103297, Holdbar spisebord OUTLET 152406 STAND:B", False),
+        ("103291, Leonora spisebordsstol OUTLET Uden ordre nr. STAND: B", False),
+    ],
+)
+def test_is_new_design(text, new):
+    assert is_new_design(text) == new
+
+
+def test_new_design_without_antal_is_reviewed():
+    parsed, keywords_missing = parse_label_fields(
+        "OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 Stand: B"
+    )
+    assert parsed["antal"] == ""
+    assert keywords_missing
+    assert ("missing", "Kunne ikke læse antallet") in label_warnings(parsed, keywords_missing)
+
+
+def test_old_design_has_no_antal():
+    parsed, keywords_missing = parse_label_fields("103297, Holdbar spisebord OUTLET 152406 STAND:B")
+    assert "antal" not in parsed
+    assert label_warnings(parsed, keywords_missing) == []
 
 
 @pytest.mark.parametrize(("text", "expected"), PARSE_CASES)

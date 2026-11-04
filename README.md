@@ -15,8 +15,8 @@ that sheet.
 ```mermaid
 flowchart LR
     A["Photos<br/>(zip from Google Drive)"] --> B["OCR<br/>RapidOCR"]
-    B --> C["Keep the label's own text<br/>anchored on OUTLET / STAND,<br/>in reading order"]
-    C --> D["Parse the fields<br/>number, name,<br/>order no., STAND"]
+    B --> C["Keep the label's own text<br/>anchored on its printed words,<br/>in reading order"]
+    C --> D["Parse the fields<br/>number, name,<br/>order no., STAND, Antal"]
     D --> E["Find the product<br/>webshop search by number,<br/>checked against the name"]
     E -->|certain| F["Approved"]
     E -->|not certain| G["Review window<br/>one plain question"]
@@ -24,7 +24,20 @@ flowchart LR
     F --> H["Excel export<br/>+ copy for Google Sheets"]
 ```
 
-A label looks like this:
+Two label designs are in use side by side. The new one (November 2026) is left-aligned, with a
+word in front of each field:
+
+```
+OUTLET · VARENR.
+103469
+Roots sofabord, Ø80
+ORDRE NR.
+156146
+-----------------------
+Antal: 1        Stand: B
+```
+
+The old one has every line centred:
 
 ```
 106466 - Sevilla U-sofa, venstrevendt
@@ -35,12 +48,17 @@ STAND: B
 ```
 
 - **Reading (`ocr.py`).** Each photo is OCR'd once. Photos contain much more than the label
-  (shipping labels, box print, other stickers), so only the text blocks centred around the label's
-  **OUTLET** and **STAND** lines are kept, ordered by their position on the label. Sideways labels
-  are detected from the same geometry and read a second time, turned upright.
-- **Parsing (`parsing.py`).** This handles the number formats found on real labels: MK numbers,
-  parts of an item (`101338_1/2`) and supplier codes (`UE 45990201`, `VN 19987-330`). It also
-  undoes the OCR slips that are safe to undo.
+  (shipping labels, box print, other stickers), so only the label's own lines are kept. The design
+  is told by its words: **VARENR.** or **ORDRE NR.** mean the new one. On a new label the words
+  VARENR., ORDRE NR., Antal and Stand mark out its area, and only parallel lines starting inside
+  it are kept; on an old label, the lines centred around **OUTLET** and **STAND**. The lines are
+  then ordered by their position on the label. Sideways labels are detected from the same geometry
+  and read a second time, turned upright.
+- **Parsing (`parsing.py`).** A new label's fields are read after their own words, and
+  **Antal** becomes STK in the export (the largest Antal of the item's photos, never the sum).
+  This handles the number formats found on real labels: MK numbers, parts of an item
+  (`101338_1/2`) and supplier codes (`UE 45990201`, `VN 19987-330`). It also undoes the OCR
+  slips that are safe to undo.
 - **Matching (`shop.py`).** A price is only filled in when it is certain: one exact variant, found
   via the label's number, that contains every word of the label's name. A name-only match, or a
   number and name that point to different products, becomes a question instead of a guess.
