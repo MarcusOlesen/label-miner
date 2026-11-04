@@ -307,9 +307,11 @@ class ReviewWindow:
         self.price_refresh_button = ttk.Button(
             price_actions, text="🔍  Søg på hjemmesiden igen", command=self._refresh_price
         )
-        self.price_refresh_button.pack(side="left")
+        self.price_refresh_button.pack(anchor="w")
+        # Below the button, wrapped: a failed search explains itself in a sentence or two
         self.price_refresh_status = ttk.Label(price_actions, text="", foreground=COLOR_MUTED)
-        self.price_refresh_status.pack(side="left", padx=(8, 0))
+        self.price_refresh_status.pack(anchor="w", pady=(4, 0))
+        self.wrapping_labels.append(self.price_refresh_status)
 
         # Pinned footer: always visible regardless of how tall the
         # scrollable content above ends up being.
@@ -623,7 +625,15 @@ class ReviewWindow:
             self.loaded_fields[key] = self.entries[key].get().strip()
         self._show_question(target_record["warnings"])
         self._show_candidates(target_record["candidates"])
-        if shop_warnings:
+        categories = {category for category, _ in shop_warnings}
+        if "shop" in categories:  # the search itself failed, e.g. too many searches
+            message = next(message for category, message in shop_warnings if category == "shop")
+            self.price_refresh_status.configure(text=message, foreground=COLOR_WARNING)
+        elif "by_number" in categories:
+            self.price_refresh_status.configure(
+                text="Udfyldt ud fra nummeret - tjek at det er den rigtige vare.", foreground=COLOR_WARNING
+            )
+        elif shop_warnings:
             self.price_refresh_status.configure(
                 text="Intet præcist match - vælg en vare herover eller ret felterne.",
                 foreground=COLOR_WARNING,

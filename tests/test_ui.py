@@ -161,3 +161,56 @@ def test_closing_keeps_the_item_and_its_edits(review, dialogs):
     window.close_window()
     window.show()
     assert window.record is rec and window.entries["mk_ordrenr"].get() == "1490227"
+
+
+class InlineThread:
+    """Runs a "background" job right away, on the test's thread: Tk can only
+    be called from the thread that runs it."""
+
+    def __init__(self, target, args=(), daemon=None):
+        self.target, self.args = target, args
+
+    def start(self):
+        self.target(*self.args)
+
+
+def run_refresh(window, monkeypatch):
+    """Press "Søg på hjemmesiden igen" and let the lookup finish."""
+    from label_miner.ui import review_window
+
+    monkeypatch.setattr(review_window.threading, "Thread", InlineThread)
+    window._refresh_price()
+    window.window.update()
+    assert not window.price_refresh_in_progress
+
+
+def test_typed_number_fills_in_the_fields(review, dialogs, monkeypatch):
+    """New labels can arrive with no number or name read: typing the
+    number and searching fills in name and price - for the user to approve."""
+    window, app, record = review
+    window.load_record(record("4-11/IMG_0978.JPG"))
+    for key in ("mk_varenummer", "varenavn", "price"):
+        window.entries[key].delete(0, tk.END)
+    window.entries["mk_varenummer"].insert(0, "106854")
+    run_refresh(window, monkeypatch)
+    assert window.entries["varenavn"].get() == "Oris sofabord, marmor emperador | Ø82"
+    assert window.entries["price"].get() == "1.999 kr (2.999 kr)"
+    assert "/products/oris-sofabord-marmor-emperador-o82" in window.record["parsed"]["url"]
+    assert [category for category, _ in window.record["warnings"]] == ["by_number"]
+    assert window.question_title.cget("text") == "Er det den rigtige vare?"
+
+
+def test_typed_number_with_variants_offers_cards(review, dialogs, monkeypatch):
+    window, app, record = review
+    window.load_record(record("4-11/IMG_0978.JPG"))
+    for key in ("mk_varenummer", "varenavn"):
+        window.entries[key].delete(0, tk.END)
+    window.entries["mk_varenummer"].insert(0, "103284")
+    run_refresh(window, monkeypatch)
+    assert sorted(candidate["name"] for candidate in window.candidates) == [
+        "Nord spisebordsstol Beige",
+        "Nord spisebordsstol Taupe",
+    ]
+    window.select_candidate(0)
+    assert window.entries["varenavn"].get() == window.candidates[0]["name"]
+    assert window.entries["price"].get() == "899 kr (1.399 kr)"

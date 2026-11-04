@@ -14,6 +14,13 @@
 - The 4-11 batch (28 new-design labels, 1 old) is in the test photos: every field of all 29 labels
   is read right, 3 are approved automatically (2 new, 1 old) and nothing wrong is approved.
 - The label guide shows the new design.
+- "Søg på hjemmesiden igen" with only an item number typed (no name) now fills in the fields: a
+  product with one variant fills in name, price and link; several variants are all offered as
+  cards. Before, an empty name matched nothing, so nothing was filled in. Such a result is only a
+  suggestion - the label still needs "Godkend" - and a part of an item still gets no price.
+- When the webshop refuses a search for being one too many (HTTP 429), the message says so and to
+  wait a minute and search again, instead of a bare error. The review window shows why a search
+  failed, under the button.
 
 ## 2.2 - 2026-11-02
 - Clicking a row that waits for review opens that label, not the next one in line.

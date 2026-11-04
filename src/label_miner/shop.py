@@ -23,7 +23,7 @@ DEFAULT_TITLE_RE = re.compile(r"\bDefault Title\b", flags=re.IGNORECASE)
 
 # Warning categories that come from the webshop lookup. They are replaced as
 # a whole whenever the lookup runs again (e.g. after the user fixed a field).
-SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "variant", "not_found", "shop", "part"}
+SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "by_number", "variant", "not_found", "shop", "part"}
 
 
 def name_tokens(name: str) -> list[str]:
@@ -81,8 +81,19 @@ def _format_shop_price(value) -> str:
     return f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " kr"
 
 
+class ShopBusyError(Exception):
+    """The webshop refused the request: too many in a short time (HTTP 429)."""
+
+
 def _get_json(session, url, params=None):
     response = session.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    if response.status_code == 429:
+        # The shop allows a burst, then only about one search a minute. Waiting here would stall
+        # the batch, so it says what happened and how to fix it; the result isn't cached.
+        raise ShopBusyError(
+            "hjemmesiden har fået for mange søgninger på kort tid. Vent et minut, "
+            'og tryk "Søg på hjemmesiden igen".'
+        )
     response.raise_for_status()
     return response.json()
 
@@ -264,6 +275,12 @@ def look_up_product(
       table, but the label says Manhattan sofa)
     - neither is found -> nothing is offered
 
+    With a number but no name (the user typed only the number in the
+    review window, or the name couldn't be read), the number's product is
+    used as it stands: one variant fills in name, price and link, with a
+    "by_number" warning so it is never approved without someone looking;
+    several variants are all offered.
+
     Warnings are (category, message) tuples, category one of
     SHOP_WARNING_CATEGORIES."""
     result, warnings = _look_up(session, cache, cache_lock, mk_varenummer, varenavn, part)
@@ -292,6 +309,9 @@ def _look_up(
             handles = _search_product_handles(session, cache, cache_lock, item_number, 1)
             if handles:
                 number_product = _fetch_product(session, cache, cache_lock, handles[0])
+
+        if number_product and not label_tokens:
+            return _number_only(number_product, item_number, part)
 
         ranked_variants = _rank_by_name(number_product["candidates"], label_tokens) if number_product else []
         match = _single_best_match(ranked_variants)
@@ -340,3 +360,28 @@ def _look_up(
             )
         ]
     return result, [("not_found", "Varen blev ikke fundet på hjemmesiden")]
+
+
+def _number_only(product: dict, item_number: str, part: str) -> tuple[dict, list[tuple[str, str]]]:
+    """The lookup for a number without a name: there is no name to check
+    the product against, so the user always confirms it."""
+    result = {"varenavn": "", "price": "", "compare_price": "", "url": "", "candidates": []}
+    variants = product["candidates"]
+    if len(variants) > 1:
+        result["candidates"] = [{**candidate, "found_by": "nummer"} for candidate in variants]
+        return result, [
+            (
+                "variant",
+                f'Nummeret {item_number} er "{product["title"]}" på hjemmesiden, '
+                f"i {len(variants)} varianter - vælg den der passer til labelen.",
+            )
+        ]
+    variant = variants[0]
+    result["varenavn"] = variant["name"]
+    result["url"] = variant["url"]
+    if not part:  # a part never gets a price
+        result["price"] = variant["price"]
+        result["compare_price"] = variant["compare_price"]
+    return result, [
+        ("by_number", f"Udfyldt ud fra nummeret {item_number} alene. Tjek at varen passer med labelen.")
+    ]

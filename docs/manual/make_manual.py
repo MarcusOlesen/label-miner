@@ -833,8 +833,8 @@ def build_story(export_rows):
         ],
         [
             "»Kunne ikke søge på hjemmesiden«",
-            "Ingen internetforbindelse.",
-            "Tjek forbindelsen, og tryk <b>Søg på hjemmesiden igen</b>.",
+            "Ingen internetforbindelse – eller for mange søgninger på kort tid.",
+            "Tjek forbindelsen, vent et minut, og tryk <b>Søg på hjemmesiden igen</b>.",
         ],
         [
             "Prisen mangler",
