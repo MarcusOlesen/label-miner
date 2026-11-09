@@ -585,8 +585,8 @@ def labelguide():
         ),
         ("<b>Stand:</b> og ét bogstav.", "»Stand: AP« eller ingen Stand."),
         (
-            "<b>Farven</b> i navnet, når varen findes i flere farver på hjemmesiden.",
-            "Uden farve gætter programmet ikke – så skal varianten vælges i hånden.",
+            "<b>Nummeret</b> – det fortæller både varen og farven på hjemmesiden.",
+            "Står farven ikke i navnet, bruges nummerets farve – et forkert nummer giver forkert farve.",
         ),
         (
             "Kun en del af varen: <b>_1/2</b> lige efter nummeret, fx <i>101338_1/2</i>.",
@@ -633,9 +633,9 @@ def labelguide():
                 "",
                 headed_card(
                     label_card_photo("4-11/IMG_0974.JPG"),
-                    "meh",
-                    "⚠  Ingen farve",
-                    "Stolen findes i to farver – varianten skal vælges i hånden.",
+                    "good",
+                    "✓  Uden farve",
+                    "Nummeret fortæller farven (Taupe) – godkendt af sig selv.",
                     col,
                 ),
                 "",

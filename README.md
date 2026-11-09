@@ -60,9 +60,10 @@ STAND: B
   This handles the number formats found on real labels: MK numbers, parts of an item
   (`101338_1/2`) and supplier codes (`UE 45990201`, `VN 19987-330`). It also undoes the OCR
   slips that are safe to undo.
-- **Matching (`shop.py`).** A price is only filled in when it is certain: one exact variant, found
-  via the label's number, that contains every word of the label's name. A name-only match, or a
-  number and name that point to different products, becomes a question instead of a guess.
+- **Matching (`shop.py`).** A price is only filled in when it is certain: the product found via the
+  label's number, its variant (colour, size) being the one whose SKU is that number, and every word
+  of the label's name in that variant's name. A name-only match, or a number and name that point to
+  different products, becomes a question instead of a guess.
 - **Reviewing (`review.py`, `ui/`).** Each doubtful label gets one plain question in Danish, with
   the webshop's likely products as picture cards. A product the user picked for the same label
   (number and name) before comes first, already selected (`choices.py`) - a suggestion only.

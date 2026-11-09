@@ -114,6 +114,18 @@ class CachedSession:
         return _Response(response.status_code, payload)
 
 
+class CachedSessionWithoutSkus(CachedSession):
+    """The recorded webshop, but with no SKUs on the variants: stands in for
+    a product whose variants don't carry the label's number."""
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        response = super().get(url, params, headers, timeout)
+        if url.endswith(".js") and response.payload:
+            variants = [{**variant, "sku": ""} for variant in response.payload.get("variants", [])]
+            response = _Response(response.status_code, {**response.payload, "variants": variants})
+        return response
+
+
 # ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------

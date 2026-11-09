@@ -17,13 +17,22 @@
   where the second would otherwise be lost.
 - An "à" in the name is read as "å" (RapidOCR reads "Blå" as "Blà").
 - The 4-11 batch (28 new-design labels, 1 old) is in the test photos: every field of all 29 labels
-  is read right, 3 are approved automatically (2 new, 1 old) and nothing wrong is approved.
+  is read right, 26 are approved automatically (25 new, 1 old) and nothing wrong is approved. The
+  other 3 aren't on the webshop.
+- The item number picks the variant: on the webshop every variant (colour, size) has the item
+  number as its SKU, so the label's number says which variant it is - also when the name doesn't
+  give the colour, as new labels often don't. The label's name must still agree with that variant,
+  or the label is reviewed, with the number's variant as the first suggestion. A typed number alone
+  fills in its exact variant. On every older fixture photo the SKU is the variant verified by
+  hand; on the 4-11 batch it takes the new design from 7 to 25 of 28 approved automatically. A
+  label without its colour now depends on its number alone for the colour: sibling colours often
+  have neighbouring numbers (Curve 103484 Brun, 103485 Beige), so a misread digit would give the
+  wrong colour.
 - The label guide shows the new design.
 - Remembered choices: when a label is approved in the review window with one of the webshop's
   suggestions picked, that product is remembered for the label's number (supplier prefix
   included) and name, in `%APPDATA%\Label Miner\choices.json`. The next label with the same
-  number and name - a repeating German label, a supplier code the shop doesn't know, a new label
-  without its colour - gets that product first, already selected and marked "valgt før (2
+  number and name - a repeating German label, a supplier code the shop doesn't know - gets that product first, already selected and marked "valgt før (2
   gange)", with today's price. It is only a suggestion: the label still goes to review, and a
   label approved automatically is never changed by it. A remembered product the shop no longer
   has, or has renamed, is not offered. Picking another product for the same label replaces the

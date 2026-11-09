@@ -104,13 +104,20 @@ def run(name, choices):
 
 
 def test_a_label_in_review_gets_its_remembered_product_first():
-    """A new label without its colour: the colour picked last time comes
-    first - and the label still goes to review."""
-    choices, _ = choice_for(NORD_BEIGE)
-    _, parsed, warnings, candidates = run("4-11/IMG_0974.JPG", choices)
+    """A label whose name doesn't match the shop (German): the product
+    picked last time comes first - and the label still goes to review."""
+    lissabon_url = "https://moebelkompagniet.dk/products/lissabon-2-personers-sofa"
+    picked = {
+        "id": 48466917327185,
+        "url": f"{lissabon_url}?variant=48466917327185",
+        "name": "Lissabon 2 personers sofa Rebel Mørkebrun",
+    }
+    choices = {}
+    remember_choice(choices, "100718", "Lissabon 2-Sitzer-Sofa Rebel Dunkelbeige", picked)
+    _, parsed, warnings, candidates = run("24-9/IMG_0292.HEIC", choices)
     assert [category for category, _ in warnings] == ["variant"]
-    assert candidates[0]["id"] == NORD_BEIGE["id"] and candidates[0]["chosen_before"] == 1
-    assert [c["id"] for c in candidates].count(NORD_BEIGE["id"]) == 1
+    assert candidates[0]["id"] == picked["id"] and candidates[0]["chosen_before"] == 1
+    assert [c["id"] for c in candidates].count(picked["id"]) == 1
     assert parsed["price"] == "" and parsed["url"] == ""  # nothing filled in or approved
 
 

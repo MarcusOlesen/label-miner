@@ -17,7 +17,7 @@ from threading import Lock
 from .config import SHOP_URL
 from .parsing import PART_PREFIX_RE, PART_SUFFIX_RE, STK_TAG_RE
 
-Candidate = dict  # {name, price, compare_price, id, url, image[, found_by]}
+Candidate = dict  # {name, price, compare_price, id, sku, url, image[, found_by]}
 
 DEFAULT_TITLE_RE = re.compile(r"\bDefault Title\b", flags=re.IGNORECASE)
 
@@ -170,11 +170,24 @@ def _variant_candidates(product_title: str, product_url: str, product_data: dict
                     variant.get("compare_at_price", product_data.get("compare_at_price"))
                 ),
                 "id": variant.get("id"),
+                "sku": (variant.get("sku") or "").strip(),
                 "url": _variant_url(product_url, variant.get("id")),
                 "image": _absolute_image_url(variant.get("featured_image")) or product_image,
             }
         )
     return candidates
+
+
+def _variant_with_sku(candidates: list[Candidate], item_number: str) -> Candidate | None:
+    """The variant whose SKU is the label's item number. The shop's SKU is
+    the item number of one exact variant (colour, size), so the number tells
+    which variant the label means - also when the name doesn't say."""
+
+    def compact(code):
+        return " ".join(code.split()).casefold()
+
+    matches = [candidate for candidate in candidates if compact(candidate["sku"]) == compact(item_number)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _variant_url(product_url: str, variant_id) -> str:
@@ -261,8 +274,10 @@ def look_up_product(
     """Find the label's product on the webshop.
 
     Fills in varenavn/price/url only when it is safe to do so without
-    anyone looking: the product was found via the label's own number and
-    exactly one variant contains every word of the label's name. Only part
+    anyone looking: the product was found via the label's own number, the
+    variant is the one whose SKU is that number (or, for a product without
+    such a SKU, the only variant that fits best), and that variant contains
+    every word of the label's name. Only part
     of an item (``part``, e.g. "1/2") gets its name and link that way but
     never a price; a part that isn't confirmed like this also gets a
     "part" warning. Everything else returns ``candidates`` for the user to
@@ -277,9 +292,10 @@ def look_up_product(
 
     With a number but no name (the user typed only the number in the
     review window, or the name couldn't be read), the number's product is
-    used as it stands: one variant fills in name, price and link, with a
-    "by_number" warning so it is never approved without someone looking;
-    several variants are all offered.
+    used as it stands: the variant with the number as its SKU (or the only
+    variant) fills in name, price and link, with a "by_number" warning so
+    it is never approved without someone looking; otherwise all variants
+    are offered.
 
     Warnings are (category, message) tuples, category one of
     SHOP_WARNING_CATEGORIES."""
@@ -310,11 +326,19 @@ def _look_up(
             if handles:
                 number_product = _fetch_product(session, cache, cache_lock, handles[0])
 
+        sku_variant = _variant_with_sku(number_product["candidates"], item_number) if number_product else None
         if number_product and not label_tokens:
-            return _number_only(number_product, item_number, part)
+            return _number_only(number_product, sku_variant, item_number, part)
 
         ranked_variants = _rank_by_name(number_product["candidates"], label_tokens) if number_product else []
-        match = _single_best_match(ranked_variants)
+        if sku_variant is not None:
+            # The number names the variant; the label's name must agree with it
+            name_agrees = token_coverage(label_tokens, name_tokens(sku_variant["name"])) == 1.0
+            match = sku_variant if name_agrees else None
+            # If it doesn't (a German label, a typo), it is still the first suggestion
+            ranked_variants.sort(key=lambda entry: entry[2] is not sku_variant)
+        else:
+            match = _single_best_match(ranked_variants)
         if match is not None:
             result["varenavn"] = match["name"]
             result["url"] = match["url"]
@@ -362,11 +386,15 @@ def _look_up(
     return result, [("not_found", "Varen blev ikke fundet på hjemmesiden")]
 
 
-def _number_only(product: dict, item_number: str, part: str) -> tuple[dict, list[tuple[str, str]]]:
+def _number_only(
+    product: dict, sku_variant: Candidate | None, item_number: str, part: str
+) -> tuple[dict, list[tuple[str, str]]]:
     """The lookup for a number without a name: there is no name to check
-    the product against, so the user always confirms it."""
+    the product against, so the user always confirms it. The variant whose
+    SKU is the number is filled in; without one, several variants are all
+    offered."""
     result = {"varenavn": "", "price": "", "compare_price": "", "url": "", "candidates": []}
-    variants = product["candidates"]
+    variants = [sku_variant] if sku_variant is not None else product["candidates"]
     if len(variants) > 1:
         result["candidates"] = [{**candidate, "found_by": "nummer"} for candidate in variants]
         return result, [

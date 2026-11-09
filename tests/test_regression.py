@@ -86,13 +86,13 @@ def test_both_label_designs_in_one_batch(answers, pipeline_results):
     assert pipeline_results["4-11/IMG_0983.JPG"]["warnings"] == []  # the old design, approved as before
 
 
-def test_new_design_without_colour_asks_for_the_variant(pipeline_results):
-    """New labels often leave out the colour: the shop's variants are
-    offered, never guessed."""
+def test_new_design_without_colour_gets_the_variant_from_the_number(pipeline_results):
+    """New labels often leave out the colour: the item number is the SKU
+    of one variant, so the colour comes from the number - never guessed."""
     nord = pipeline_results["4-11/IMG_0974.JPG"]
-    assert {category for category, _ in nord["warnings"]} == {"variant"}
-    assert sorted(candidate["name"] for candidate in nord["candidates"]) == [
-        "Nord spisebordsstol Beige",
-        "Nord spisebordsstol Taupe",
-    ]
-    assert nord["parsed"]["price"] == ""
+    assert nord["warnings"] == []
+    assert nord["parsed"]["varenavn"] == "Nord spisebordsstol Taupe"
+    assert nord["parsed"]["price"] == "899 kr (1.399 kr)"
+    # Same name on both labels, two colours
+    assert pipeline_results["4-11/IMG_1002.JPG"]["parsed"]["varenavn"].endswith("Amiya Beige")
+    assert pipeline_results["4-11/IMG_1003.JPG"]["parsed"]["varenavn"].endswith("Amiya Brun")

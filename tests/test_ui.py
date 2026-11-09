@@ -10,7 +10,7 @@ import tkinter as tk
 import pytest
 
 from conftest import FIXTURES
-from harness import CachedSession
+from harness import CachedSession, CachedSessionWithoutSkus
 
 pytestmark = pytest.mark.gui
 
@@ -204,8 +204,22 @@ def test_typed_number_fills_in_the_fields(review, dialogs, monkeypatch):
     assert window.question_title.cget("text") == "Er det den rigtige vare?"
 
 
-def test_typed_number_with_variants_offers_cards(review, dialogs, monkeypatch):
+def test_typed_number_fills_in_its_exact_variant(review, dialogs, monkeypatch):
+    """The number is the SKU of one variant, so the colour is filled in too."""
     window, app, record = review
+    window.load_record(record("4-11/IMG_0978.JPG"))
+    for key in ("mk_varenummer", "varenavn"):
+        window.entries[key].delete(0, tk.END)
+    window.entries["mk_varenummer"].insert(0, "103284")
+    run_refresh(window, monkeypatch)
+    assert window.entries["varenavn"].get() == "Nord spisebordsstol Taupe"
+    assert window.entries["price"].get() == "899 kr (1.399 kr)"
+
+
+def test_typed_number_with_variants_offers_cards(review, dialogs, monkeypatch):
+    """A product whose variants don't carry the number: all are offered."""
+    window, app, record = review
+    app.http_session = CachedSessionWithoutSkus(FIXTURES / "shop")
     window.load_record(record("4-11/IMG_0978.JPG"))
     for key in ("mk_varenummer", "varenavn"):
         window.entries[key].delete(0, tk.END)
@@ -222,12 +236,12 @@ def test_typed_number_with_variants_offers_cards(review, dialogs, monkeypatch):
 
 def test_approving_a_picked_product_remembers_it_under_the_label(review, dialogs):
     window, app, record = review
-    window.load_record(record("4-11/IMG_0974.JPG"))  # Nord, no colour on the label
-    beige = next(i for i, c in enumerate(window.candidates) if c["name"].endswith("Beige"))
-    window.select_candidate(beige)
+    window.load_record(record("24-9/IMG_0292.HEIC"))  # German label
+    dark_beige = next(i for i, c in enumerate(window.candidates) if c["name"].endswith("Mørk Beige"))
+    window.select_candidate(dark_beige)
     window.confirm()
     # Under the label's own name - not the shop's, which replaced it in the field
-    assert app.remembered == [("103284", "Nord spisebordsstol", 54932797686137)]
+    assert app.remembered == [("100718", "Lissabon 2-Sitzer-Sofa Rebel Dunkelbeige", 48466917294417)]
 
 
 def test_typed_price_without_a_pick_is_not_remembered(review, dialogs):
@@ -240,13 +254,14 @@ def test_typed_price_without_a_pick_is_not_remembered(review, dialogs):
 
 def test_remembered_product_is_selected_already(review, dialogs):
     window, app, record = review
-    rec = record("4-11/IMG_0974.JPG")
+    rec = record("24-9/IMG_0292.HEIC")
     remembered = {**rec["candidates"][1], "found_by": "valgt før", "chosen_before": 2}
     rec["candidates"] = [remembered, rec["candidates"][0]]
+    price = f"{remembered['price']} ({remembered['compare_price']})"
     window.load_record(rec)
     assert window.selected_candidate is window.candidates[0]
     assert window.entries["varenavn"].get() == remembered["name"]
-    assert window.entries["price"].get() == "899 kr (1.399 kr)"
+    assert window.entries["price"].get() == price
     assert not window.fields_changed()  # the pre-selection is not the user's edit
     asked, _ = dialogs
     window.skip()  # nothing to ask, nothing saved
@@ -254,5 +269,5 @@ def test_remembered_product_is_selected_already(review, dialogs):
 
     window.load_record(rec)
     window.confirm()  # one click: approved, and remembered once more under the label's name
-    assert app.remembered == [("103284", "Nord spisebordsstol", remembered["id"])]
-    assert rec["parsed"]["price"] == "899 kr (1.399 kr)" and rec["warnings"] == []
+    assert app.remembered == [("100718", "Lissabon 2-Sitzer-Sofa Rebel Dunkelbeige", remembered["id"])]
+    assert rec["parsed"]["price"] == price and rec["warnings"] == []

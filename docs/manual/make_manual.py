@@ -474,8 +474,8 @@ def build_story(export_rows):
         ],
         [
             "Vælg den rigtige vare",
-            "Varen er fundet, men navn eller farve passer ikke præcist (fx en tysk label).",
-            "Vælg den farve eller udgave, der står på labelen.",
+            "Varen er fundet, men navnet passer ikke præcist (fx en tysk label).",
+            "Den udgave, nummeret hører til, står øverst. Tjek den, vælg og godkend.",
         ],
         [
             "Delvis vare (del 1/2)",
@@ -757,8 +757,8 @@ def build_story(export_rows):
                         ["STAND er A, B eller C", "»AP« → Gennemse"],
                         ["Nummeret findes på hjemmesiden", "leverandørnummer → Gennemse"],
                         [
-                            "Præcis én udgave passer til <i>alle</i> ord på labelen",
-                            "farven mangler på labelen → Gennemse",
+                            "Nummeret er én udgave (fx farve), og <i>alle</i> ord på labelen passer til den",
+                            "navnet passer ikke (fx en tysk label) → Gennemse",
                         ],
                         [
                             "Delvis vare (»1/2«, »2/2«): det samme",
