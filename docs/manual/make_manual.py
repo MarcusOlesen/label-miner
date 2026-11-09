@@ -441,7 +441,9 @@ def build_story(export_rows):
                 Spacer(1, 8),
                 p(
                     "Under hver vare står, om den er fundet <i>via nummer</i> (nummeret på labelen) "
-                    "eller <i>via navn</i>. Står den der ikke, må du gerne skrive navn og pris selv.",
+                    "eller <i>via navn</i>. Står den der ikke, må du gerne skrive navn og pris selv. "
+                    "Har du valgt en vare til samme label før, står den øverst – <i>valgt før</i> – og "
+                    "er allerede valgt: tjek den, og godkend. Programmet godkender den aldrig selv.",
                     SMALL,
                 ),
             ],
@@ -472,8 +474,8 @@ def build_story(export_rows):
         ],
         [
             "Vælg den rigtige vare",
-            "Varen er fundet, men navn eller farve passer ikke præcist (fx en tysk label).",
-            "Vælg den farve eller udgave, der står på labelen.",
+            "Varen er fundet, men navnet passer ikke præcist (fx en tysk label).",
+            "Den udgave, nummeret hører til, står øverst. Tjek den, vælg og godkend.",
         ],
         [
             "Delvis vare (del 1/2)",
@@ -630,8 +632,9 @@ def build_story(export_rows):
                     W - img_w - GAP,
                 ),
                 note(
-                    "Er den samme vare fotograferet flere gange, bliver den til én række med "
-                    "<b>STK</b> = antal billeder."
+                    "Er den samme vare fotograferet flere gange, bliver den til én række. "
+                    "<b>STK</b> = antal billeder. Er <i>STK = labelens Antal</i> slået til på "
+                    "startskærmen, tæller hvert billede i stedet som labelens Antal. Valget huskes."
                 ),
             ],
             img_w,
@@ -754,8 +757,8 @@ def build_story(export_rows):
                         ["STAND er A, B eller C", "»AP« → Gennemse"],
                         ["Nummeret findes på hjemmesiden", "leverandørnummer → Gennemse"],
                         [
-                            "Præcis én udgave passer til <i>alle</i> ord på labelen",
-                            "farven mangler på labelen → Gennemse",
+                            "Nummeret er én udgave (fx farve), og <i>alle</i> ord på labelen passer til den",
+                            "navnet passer ikke (fx en tysk label) → Gennemse",
                         ],
                         [
                             "Delvis vare (»1/2«, »2/2«): det samme",
@@ -777,7 +780,7 @@ def build_story(export_rows):
                 colour_table(
                     ["På labelen", "Hvad sker der"],
                     [
-                        ["»- 6 stk.« efter navnet", "Bruges ikke. STK tælles ud fra antal billeder."],
+                        ["»- 6 stk.« efter navnet", "Bruges ikke."],
                         ["Håndskrift, fx »1stk«", "Ignoreres."],
                         ["Andre klistermærker og tekst på kassen", "Ignoreres – kun selve labelen læses."],
                         ["Tekst under STAND, fx »(forkert vare sendt)«", "Ignoreres."],
@@ -833,8 +836,8 @@ def build_story(export_rows):
         ],
         [
             "»Kunne ikke søge på hjemmesiden«",
-            "Ingen internetforbindelse.",
-            "Tjek forbindelsen, og tryk <b>Søg på hjemmesiden igen</b>.",
+            "Ingen internetforbindelse – eller for mange søgninger på kort tid.",
+            "Tjek forbindelsen, vent et minut, og tryk <b>Søg på hjemmesiden igen</b>.",
         ],
         [
             "Prisen mangler",

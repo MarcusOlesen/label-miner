@@ -144,14 +144,14 @@ def card(path, verdict, text, width, caption_height=44):
 
 
 class DrawnLabel(Flowable):
-    """The label format drawn as a printed label: white paper with a soft
-    shadow, centred lines, and numbered markers pointing at each part."""
+    """The new label design drawn as a printed label: white paper with a
+    soft shadow, left-aligned lines, Antal and Stand on the bottom line,
+    and numbered markers pointing at each part."""
 
-    LINES = [  # (text lines, marker number)
-        (["106466 - Sevilla U-sofa, venstrevendt", "Loop Mørk Beige"], 1),
-        (["OUTLET"], 2),
-        (["142415"], 3),
-        (["STAND: B"], 4),
+    LINES = [  # (text lines, marker number); a tuple is a left and a right part
+        (["OUTLET · VARENR.", "103469", "Roots sofabord, Ø80"], 1),
+        (["ORDRE NR.", "156146"], 2),
+        ([("Antal: 1", "Stand: B")], 3),
     ]
 
     def __init__(self, width=300, font_size=14.5):
@@ -160,7 +160,7 @@ class DrawnLabel(Flowable):
         self.leading = font_size * 1.32
         self.pad = 15
         rows = sum(len(lines) for lines, _ in self.LINES)
-        self.label_h = rows * self.leading + (len(self.LINES) - 1) * 4 + 2 * self.pad
+        self.label_h = rows * self.leading + (len(self.LINES) - 1) * 4 + 2 * self.pad + 8
 
     def wrap(self, *_):
         return self.label_w + 44, self.label_h + 6
@@ -176,13 +176,25 @@ class DrawnLabel(Flowable):
         c.setLineWidth(0.8)
         c.roundRect(x0, y0, self.label_w, self.label_h, 7, stroke=1, fill=1)
         y = y0 + self.label_h - self.pad
+        left, right = x0 + self.pad, x0 + self.label_w - self.pad
         for lines, number in self.LINES:
+            if isinstance(lines[0], tuple):  # the bottom line, below a rule
+                y -= 8
+                c.setStrokeColor(M.INK)
+                c.setLineWidth(0.6)
+                c.setDash(3, 2)
+                c.line(left, y + 2, right, y + 2)
+                c.setDash()
             top = y
             for line in lines:
                 y -= self.leading
                 c.setFillColor(M.INK)
                 c.setFont("UI", self.size)
-                c.drawCentredString(x0 + self.label_w / 2, y + self.leading * 0.25, line)
+                if isinstance(line, tuple):
+                    c.drawString(left, y + self.leading * 0.25, line[0])
+                    c.drawRightString(right, y + self.leading * 0.25, line[1])
+                else:
+                    c.drawString(left, y + self.leading * 0.25, line)
             middle = (top + y) / 2
             r = 10
             c.setStrokeColor(M.ORANGE)
@@ -459,7 +471,8 @@ def fotoguide():
             "Gå <b>tæt på</b>, så labelen fylder det meste af billedet.",
             "Hold telefonen <b>retvendt</b> og lige på labelen – ikke på siden eller skråt.",
             "Hold telefonen stille, og <b>tryk på labelen</b> på skærmen, så den er skarp.",
-            "<b>Ét billede pr. vare.</b> To billeder af samme vare tælles som STK = 2.",
+            "<b>Ét billede pr. vare.</b> To billeder af samme vare tælles som STK = 2 "
+            "(med <i>STK = labelens Antal</i> slået til: ét billede pr. label).",
         ],
     )
     avoid = (
@@ -523,12 +536,15 @@ def labelguide():
         [
             (
                 1,
-                "<b>Nummer</b>, helst efterfulgt af bindestreg eller komma, og derefter "
-                "<b>varenavn og farve</b>.",
+                "<b>OUTLET · VARENR.</b> øverst, så <b>nummeret</b> på sin egen linje og "
+                "<b>varenavnet</b> under – gerne med farven, og gerne over to linjer.",
             ),
-            (2, "<b>OUTLET</b> på sin egen linje."),
-            (3, "<b>Én linje</b> med MK-ordrenummeret (eller fx <i>LAGER</i>)."),
-            (4, "<b>STAND:</b> og ét bogstav – A, B eller C."),
+            (2, "<b>ORDRE NR.</b> og under det MK-ordrenummeret (eller fx <i>Lager</i>)."),
+            (
+                3,
+                "Under stregen: <b>Antal:</b> og et tal til venstre, <b>Stand:</b> og ét bogstav "
+                "– A, B eller C – yderst til højre.",
+            ),
         ],
         W - drawing.wrap()[0] - 20,
     )
@@ -546,9 +562,9 @@ def labelguide():
     )
 
     how = M.note(
-        "<b>Sådan læser programmet labelen:</b> det finder <b>OUTLET</b> og <b>STAND</b> "
-        "og tager de <b>centrerede</b> linjer omkring dem. Før OUTLET: nummer og navn. "
-        "Mellem OUTLET og STAND: ordrenummeret."
+        "<b>Sådan læser programmet labelen:</b> ordene <b>VARENR.</b>, <b>ORDRE NR.</b>, <b>Antal</b> "
+        "og <b>Stand</b> viser, hvor hvert felt står. Gamle, "
+        "centrerede labels (OUTLET og STAND uden VARENR.) læses stadig."
     )
 
     # Rules as green/red pairs: what the program relies on / what breaks it
@@ -559,18 +575,19 @@ def labelguide():
     item = ParagraphStyle("PairItem", parent=M.CELL, fontSize=10, leading=13)
     pairs = [
         (
-            "<b>OUTLET</b> og <b>STAND</b> står på labelen, stavet sådan.",
+            "Ordene <b>OUTLET · VARENR.</b>, <b>ORDRE NR.</b>, <b>Antal</b> og <b>Stand</b> står "
+            "på labelen, stavet sådan.",
             "Et af ordene mangler, er stavet anderledes eller er dækket – så skal labelen tjekkes i hånden.",
         ),
         (
-            "Al tekst er <b>centreret</b> og printet, som i dag.",
-            "Venstrestillet tekst – så mister programmet linjen med nummer og navn.",
+            "<b>Antal:</b> og hele antallet på ordrelinjen, fx 24 stole.",
+            "Intet tal efter Antal – så skal antallet skrives i hånden.",
         ),
+        ("<b>Stand:</b> og ét bogstav.", "»Stand: AP« eller ingen Stand."),
         (
-            "<b>Én linje</b> mellem OUTLET og STAND.",
-            "Flere linjer der – de bliver alle læst som ordrenummeret.",
+            "<b>Nummeret</b> – det fortæller både varen og farven på hjemmesiden.",
+            "Står farven ikke i navnet, bruges nummerets farve – et forkert nummer giver forkert farve.",
         ),
-        ("<b>STAND:</b> og ét bogstav.", "»STAND: AP« eller ingen STAND-linje."),
         (
             "Kun en del af varen: <b>_1/2</b> lige efter nummeret, fx <i>101338_1/2</i>.",
             "Delen skrevet sidst i navnet – så bliver den ikke fanget.",
@@ -607,26 +624,26 @@ def labelguide():
         [
             [
                 headed_card(
-                    label_card_photo("24-9/IMG_0276.HEIC"),
+                    label_card_photo("4-11/IMG_0978.JPG"),
                     "good",
                     "✓  Som den skal være",
-                    "Nummer, navn og farve, OUTLET, ordrenummer, STAND.",
+                    "Nummer, navn, ordrenummer, Antal og Stand – godkendt af sig selv.",
                     col,
                 ),
                 "",
                 headed_card(
-                    label_card_photo("24-9/IMG_0286.HEIC"),
-                    "bad",
-                    "✗  Ingen STAND",
-                    "STAND-linjen mangler (og intet komma efter nummeret).",
+                    label_card_photo("4-11/IMG_0974.JPG"),
+                    "good",
+                    "✓  Uden farve",
+                    "Nummeret fortæller farven (Taupe) – godkendt af sig selv.",
                     col,
                 ),
                 "",
                 headed_card(
-                    label_card_photo("15-9/IMG_9176.HEIC"),
-                    "bad",
-                    "✗  »STAND: AP«",
-                    "Kun ét bogstav – A, B eller C.",
+                    label_card_photo("4-11/IMG_0983.JPG"),
+                    "good",
+                    "✓  Gammel udgave",
+                    "Centreret, med OUTLET og STAND – læses stadig.",
                     col,
                 ),
             ]

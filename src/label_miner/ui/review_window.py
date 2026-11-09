@@ -11,6 +11,7 @@ from PIL import Image, ImageOps, ImageTk
 
 from ..config import COLOR_APPROVE, COLOR_APPROVE_ACTIVE, COLOR_MUTED, COLOR_OK, COLOR_WARNING, SHOP_URL
 from ..parsing import VALID_STANDS, item_part, part_note
+from ..pipeline import with_remembered_choice
 from ..review import review_question
 from ..shop import SHOP_WARNING_CATEGORIES, format_combined_price, look_up_product
 from ..util import debug_log
@@ -294,8 +295,12 @@ class ReviewWindow:
         self._add_entry(fields, 1, "Varenavn", "varenavn")
         self._add_entry(fields, 2, "MK ordrenr", "mk_ordrenr")
         self._add_entry(fields, 3, "Stand", "stand")
-        self._add_entry(fields, 4, "Pris / kommentar", "price")
+        # Printed only on the new label design; STK in the export (see batch.pieces)
+        self._add_entry(fields, 4, "Antal", "antal")
+        self._add_entry(fields, 5, "Pris / kommentar", "price")
         self.loaded_fields = {}
+        self.preselected_fields = None
+        self.label_name_at_choice = ""
 
         # Re-runs just the webshop lookup with whatever's currently typed
         # above - for a corrected number/name, without redoing OCR.
@@ -305,9 +310,11 @@ class ReviewWindow:
         self.price_refresh_button = ttk.Button(
             price_actions, text="🔍  Søg på hjemmesiden igen", command=self._refresh_price
         )
-        self.price_refresh_button.pack(side="left")
+        self.price_refresh_button.pack(anchor="w")
+        # Below the button, wrapped: a failed search explains itself in a sentence or two
         self.price_refresh_status = ttk.Label(price_actions, text="", foreground=COLOR_MUTED)
-        self.price_refresh_status.pack(side="left", padx=(8, 0))
+        self.price_refresh_status.pack(anchor="w", pady=(4, 0))
+        self.wrapping_labels.append(self.price_refresh_status)
 
         # Pinned footer: always visible regardless of how tall the
         # scrollable content above ends up being.
@@ -442,7 +449,11 @@ class ReviewWindow:
             if is_part:
                 price = "delvis vare – ingen pris"
             found_by = candidate.get("found_by")
-            details = price + (f"   ·   fundet via {found_by}" if found_by else "")
+            if candidate.get("chosen_before"):
+                times = candidate["chosen_before"]
+                details = price + f"   ·   valgt før ({times} {'gang' if times == 1 else 'gange'})"
+            else:
+                details = price + (f"   ·   fundet via {found_by}" if found_by else "")
             meta = tk.Label(
                 card, text=details, background=self.card_background, foreground=COLOR_MUTED, anchor="w"
             )
@@ -515,6 +526,10 @@ class ReviewWindow:
             # Checked before the name is replaced: the part marker may only
             # be in the label's name ("2/2 Vega ..."), never in the shop's
             fields = self.read_fields()
+            # The label's own name, before the shop's replaces it: what a
+            # remembered choice is kept under (see confirm)
+            if self.selected_candidate is None:
+                self.label_name_at_choice = fields["varenavn"]
             part = item_part(fields["mk_varenummer"], fields["varenavn"]) or (
                 self.record["parsed"].get("part", "") if self.record is not None else ""
             )
@@ -557,7 +572,11 @@ class ReviewWindow:
             )
 
     def fields_changed(self):
-        return self.record is not None and self.read_fields() != self.loaded_fields
+        """Whether the user changed anything - a pre-selected remembered
+        choice (see load_record) is not a change of theirs."""
+        if self.record is None:
+            return False
+        return self.read_fields() != (self.preselected_fields or self.loaded_fields)
 
     def _refresh_price(self):
         """Re-run just the webshop lookup using whatever's currently typed
@@ -584,6 +603,16 @@ class ReviewWindow:
             fields["varenavn"],
             item_part(fields["mk_varenummer"], fields["varenavn"]),
         )
+        if shop_warnings:
+            shop_result["candidates"] = with_remembered_choice(
+                self.app.http_session,
+                self.app.price_cache,
+                self.app.price_cache_lock,
+                self.app.choices,
+                fields["mk_varenummer"],
+                fields["varenavn"],
+                shop_result["candidates"],
+            )
         self.window.after(0, self._apply_price_refresh, target_record, shop_result, shop_warnings)
 
     def _apply_price_refresh(self, target_record, shop_result, shop_warnings):
@@ -621,7 +650,15 @@ class ReviewWindow:
             self.loaded_fields[key] = self.entries[key].get().strip()
         self._show_question(target_record["warnings"])
         self._show_candidates(target_record["candidates"])
-        if shop_warnings:
+        categories = {category for category, _ in shop_warnings}
+        if "shop" in categories:  # the search itself failed, e.g. too many searches
+            message = next(message for category, message in shop_warnings if category == "shop")
+            self.price_refresh_status.configure(text=message, foreground=COLOR_WARNING)
+        elif "by_number" in categories:
+            self.price_refresh_status.configure(
+                text="Udfyldt ud fra nummeret - tjek at det er den rigtige vare.", foreground=COLOR_WARNING
+            )
+        elif shop_warnings:
             self.price_refresh_status.configure(
                 text="Intet præcist match - vælg en vare herover eller ret felterne.",
                 foreground=COLOR_WARNING,
@@ -662,6 +699,13 @@ class ReviewWindow:
 
         attention = self._show_question(record["warnings"])
         self._show_candidates(record.get("candidates", []))
+        # A remembered choice (see choices.py) is selected already - one
+        # click on "Godkend", or another card to pick something else
+        self.preselected_fields = None
+        self.label_name_at_choice = ""
+        if self.candidates and self.candidates[0].get("chosen_before"):
+            self.select_candidate(0)
+            self.preselected_fields = self.read_fields()
 
         self.window.deiconify()
         self.window.lift()
@@ -821,6 +865,11 @@ class ReviewWindow:
             parent=self.window,
         ):
             return
+        if fields["antal"] and not fields["antal"].isdigit():
+            messagebox.showwarning(
+                "Tjek Antal", "Antal skal være et tal, fx 2 – eller tomt.", parent=self.window
+            )
+            return
         is_part = bool(
             item_part(fields["mk_varenummer"], fields["varenavn"]) or self.record["parsed"].get("part")
         )
@@ -839,6 +888,9 @@ class ReviewWindow:
         self.record["parsed"].update(fields)
         if self.selected_candidate is not None:
             self.record["parsed"]["url"] = self.selected_candidate["url"]
+            self.app.remember_choice(
+                fields["mk_varenummer"], self.label_name_at_choice, self.selected_candidate
+            )
         self.record["candidates"] = []
         self.record["warnings"] = []
         record = self.record

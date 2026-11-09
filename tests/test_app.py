@@ -15,6 +15,8 @@ import pytest
 
 from conftest import FIXTURES
 from harness import CachedOcrEngine, CachedSession
+from label_miner.choices import load_choices
+from label_miner.settings import load_settings
 
 pytestmark = pytest.mark.gui
 
@@ -62,6 +64,12 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
     try:
         app = app_module.LabelMinerApp(root)
         app.http_session = CachedSession(FIXTURES / "shop")
+        assert app.stk_from_antal.get() is False  # STK = one per photo unless the user ticks it
+        app.stk_from_antal.set(True)
+        app._save_settings()  # what ticking the box does: remembered for the next run
+        assert load_settings()["stk_from_antal"] is True
+        app.stk_from_antal.set(False)
+        app._save_settings()
         app.ocr_engine_ready()
         app.begin_processing(sorted(batch.iterdir()))
         run_until(root, lambda: not app.processing and app.work_completed >= len(photos))
@@ -96,5 +104,7 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         assert by_image["IMG_0302.HEIC"][1].startswith("Manhattan")  # the conflict, resolved
         assert by_image["IMG_0283.HEIC"][7] == "OBS: delvis vare (del 1/2)"  # part of an item: no price
         assert by_image["IMG_9164.HEIC"][1].startswith("Paris U-sofa")  # sideways, approved on its own
+        # The products picked in the reviews are remembered for next time (see choices.py)
+        assert any(choice["name"].startswith("Manhattan") for choice in load_choices().values())
     finally:
         root.destroy()

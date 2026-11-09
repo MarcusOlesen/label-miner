@@ -17,13 +17,13 @@ from threading import Lock
 from .config import SHOP_URL
 from .parsing import PART_PREFIX_RE, PART_SUFFIX_RE, STK_TAG_RE
 
-Candidate = dict  # {name, price, compare_price, id, url, image[, found_by]}
+Candidate = dict  # {name, price, compare_price, id, sku, url, image[, found_by]}
 
 DEFAULT_TITLE_RE = re.compile(r"\bDefault Title\b", flags=re.IGNORECASE)
 
 # Warning categories that come from the webshop lookup. They are replaced as
 # a whole whenever the lookup runs again (e.g. after the user fixed a field).
-SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "variant", "not_found", "shop", "part"}
+SHOP_WARNING_CATEGORIES = {"conflict", "by_name", "by_number", "variant", "not_found", "shop", "part"}
 
 
 def name_tokens(name: str) -> list[str]:
@@ -81,8 +81,19 @@ def _format_shop_price(value) -> str:
     return f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " kr"
 
 
+class ShopBusyError(Exception):
+    """The webshop refused the request: too many in a short time (HTTP 429)."""
+
+
 def _get_json(session, url, params=None):
     response = session.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    if response.status_code == 429:
+        # The shop allows a burst, then only about one search a minute. Waiting here would stall
+        # the batch, so it says what happened and how to fix it; the result isn't cached.
+        raise ShopBusyError(
+            "hjemmesiden har fået for mange søgninger på kort tid. Vent et minut, "
+            'og tryk "Søg på hjemmesiden igen".'
+        )
     response.raise_for_status()
     return response.json()
 
@@ -159,11 +170,24 @@ def _variant_candidates(product_title: str, product_url: str, product_data: dict
                     variant.get("compare_at_price", product_data.get("compare_at_price"))
                 ),
                 "id": variant.get("id"),
+                "sku": (variant.get("sku") or "").strip(),
                 "url": _variant_url(product_url, variant.get("id")),
                 "image": _absolute_image_url(variant.get("featured_image")) or product_image,
             }
         )
     return candidates
+
+
+def _variant_with_sku(candidates: list[Candidate], item_number: str) -> Candidate | None:
+    """The variant whose SKU is the label's item number. The shop's SKU is
+    the item number of one exact variant (colour, size), so the number tells
+    which variant the label means - also when the name doesn't say."""
+
+    def compact(code):
+        return " ".join(code.split()).casefold()
+
+    matches = [candidate for candidate in candidates if compact(candidate["sku"]) == compact(item_number)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _variant_url(product_url: str, variant_id) -> str:
@@ -250,8 +274,10 @@ def look_up_product(
     """Find the label's product on the webshop.
 
     Fills in varenavn/price/url only when it is safe to do so without
-    anyone looking: the product was found via the label's own number and
-    exactly one variant contains every word of the label's name. Only part
+    anyone looking: the product was found via the label's own number, the
+    variant is the one whose SKU is that number (or, for a product without
+    such a SKU, the only variant that fits best), and that variant contains
+    every word of the label's name. Only part
     of an item (``part``, e.g. "1/2") gets its name and link that way but
     never a price; a part that isn't confirmed like this also gets a
     "part" warning. Everything else returns ``candidates`` for the user to
@@ -263,6 +289,13 @@ def look_up_product(
       offered, as the label's number may be wrong (e.g. 106258 is a Vetro
       table, but the label says Manhattan sofa)
     - neither is found -> nothing is offered
+
+    With a number but no name (the user typed only the number in the
+    review window, or the name couldn't be read), the number's product is
+    used as it stands: the variant with the number as its SKU (or the only
+    variant) fills in name, price and link, with a "by_number" warning so
+    it is never approved without someone looking; otherwise all variants
+    are offered.
 
     Warnings are (category, message) tuples, category one of
     SHOP_WARNING_CATEGORIES."""
@@ -293,8 +326,19 @@ def _look_up(
             if handles:
                 number_product = _fetch_product(session, cache, cache_lock, handles[0])
 
+        sku_variant = _variant_with_sku(number_product["candidates"], item_number) if number_product else None
+        if number_product and not label_tokens:
+            return _number_only(number_product, sku_variant, item_number, part)
+
         ranked_variants = _rank_by_name(number_product["candidates"], label_tokens) if number_product else []
-        match = _single_best_match(ranked_variants)
+        if sku_variant is not None:
+            # The number names the variant; the label's name must agree with it
+            name_agrees = token_coverage(label_tokens, name_tokens(sku_variant["name"])) == 1.0
+            match = sku_variant if name_agrees else None
+            # If it doesn't (a German label, a typo), it is still the first suggestion
+            ranked_variants.sort(key=lambda entry: entry[2] is not sku_variant)
+        else:
+            match = _single_best_match(ranked_variants)
         if match is not None:
             result["varenavn"] = match["name"]
             result["url"] = match["url"]
@@ -340,3 +384,52 @@ def _look_up(
             )
         ]
     return result, [("not_found", "Varen blev ikke fundet på hjemmesiden")]
+
+
+def _number_only(
+    product: dict, sku_variant: Candidate | None, item_number: str, part: str
+) -> tuple[dict, list[tuple[str, str]]]:
+    """The lookup for a number without a name: there is no name to check
+    the product against, so the user always confirms it. The variant whose
+    SKU is the number is filled in; without one, several variants are all
+    offered."""
+    result = {"varenavn": "", "price": "", "compare_price": "", "url": "", "candidates": []}
+    variants = [sku_variant] if sku_variant is not None else product["candidates"]
+    if len(variants) > 1:
+        result["candidates"] = [{**candidate, "found_by": "nummer"} for candidate in variants]
+        return result, [
+            (
+                "variant",
+                f'Nummeret {item_number} er "{product["title"]}" på hjemmesiden, '
+                f"i {len(variants)} varianter - vælg den der passer til labelen.",
+            )
+        ]
+    variant = variants[0]
+    result["varenavn"] = variant["name"]
+    result["url"] = variant["url"]
+    if not part:  # a part never gets a price
+        result["price"] = variant["price"]
+        result["compare_price"] = variant["compare_price"]
+    return result, [
+        ("by_number", f"Udfyldt ud fra nummeret {item_number} alene. Tjek at varen passer med labelen.")
+    ]
+
+
+def remembered_candidate(session, cache: dict, cache_lock: Lock, choice: dict) -> Candidate | None:
+    """A remembered choice (see choices.py) as a suggestion, with today's
+    price - or None when the shop no longer has that variant, or it is now
+    called something else (the shop reorganised its products, so the old
+    choice may no longer be what the user picked)."""
+    handle = re.search(r"/products/([^?/]+)", choice["url"])
+    if handle is None:
+        return None
+    try:
+        product = _fetch_product(session, cache, cache_lock, handle.group(1))
+    except Exception:
+        return None
+    for candidate in product["candidates"]:
+        if candidate["id"] == choice["variant_id"]:
+            if name_tokens(candidate["name"]) != name_tokens(choice["name"]):
+                return None
+            return {**candidate, "found_by": "valgt før", "chosen_before": choice["count"]}
+    return None

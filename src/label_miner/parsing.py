@@ -1,14 +1,27 @@
 """Splitting a label's text into its fields.
 
-A label reads, line by line::
+Two label designs are in use side by side. The old one reads, line by
+line, every line centred::
 
     <number>, <product name>        (or "<number> - <product name>")
     OUTLET
     <order number>
     STAND: <A/B/C>
 
-The input is the label's text in reading order (see
-``ocr.label_blocks_in_reading_order``), joined into one line.
+The new one (from November 2026) is left-aligned, with the words for each
+field printed on the label::
+
+    OUTLET · VARENR.
+    <number>
+    <product name>                  (may run over two lines)
+    ORDRE NR.
+    <order number>
+    -----------------------
+    Antal: <quantity>        Stand: <A/B/C>
+
+The design is told by its words: VARENR. and ORDRE NR. are only on the new
+one (see ``is_new_design``). The input is the label's text in reading order
+(see ``ocr.label_blocks_in_reading_order``), joined into one line.
 """
 
 import re
@@ -35,6 +48,14 @@ OUTLET_RE = re.compile(r"\bOUTLET\b", flags=re.IGNORECASE)
 STAND_RE = re.compile(r"\bSTAND\b\s*:?\s*(?P<stand>[A-Z]{1,3}\b)?", flags=re.IGNORECASE)
 # The two words that identify a label's text among everything else in a photo
 LABEL_ANCHOR_RE = re.compile(r"\b(?:OUTLET|STAND)\b", flags=re.IGNORECASE)
+# The words only the new design has, and those that mark out its area
+# (see ocr._left_aligned_label). Capitals only, as printed: an old label's
+# order number can say "Uden ordre nr."
+NEW_DESIGN_RE = re.compile(r"\bVARENR\b|\bORDRE\s*NR\b")
+NEW_DESIGN_KEYWORD_RE = re.compile(r"\b(?:VARENR|ORDRE\s*NR|ANTAL|STAND)\b", flags=re.IGNORECASE)
+VARENR_RE = re.compile(r"\bVARENR\b\.?", flags=re.IGNORECASE)
+ORDRE_NR_RE = re.compile(r"\bORDRE\s*NR\b\.?", flags=re.IGNORECASE)
+ANTAL_RE = re.compile(r"\bANTAL\b\s*:?", flags=re.IGNORECASE)
 VALID_STANDS = {"A", "B", "C"}
 # An order number is a number (German orders: "#DE 2021"), or says the item
 # came from stock. Anything else ("Uden ordre nr.", stray text read into it)
@@ -61,11 +82,16 @@ MISSING_FIELD_NAMES = {
     "varenavn": "varenavnet",
     "mk_ordrenr": "MK-ordrenummeret",
     "stand": "standen",
+    # Only the new design prints the quantity; an old label's fields have no "antal"
+    "antal": "antallet",
 }
 
 
 def _clean_varenavn(varenavn: str) -> str:
     varenavn = varenavn.replace("×", "x")
+    # RapidOCR sometimes reads å as à ("Aragon Blà"), a letter no Danish or
+    # German product name has
+    varenavn = varenavn.replace("à", "å").replace("À", "Å")
     varenavn = PIPE_RE.sub(" | ", varenavn)
     varenavn = DIAMETER_DIGITS_RE.sub(r"Ø\1", varenavn)
     return WHITESPACE_RE.sub(" ", varenavn).strip(" ,|-")
@@ -87,40 +113,104 @@ def item_part(mk_varenummer: str, varenavn: str) -> str:
     return match["part"] if match else ""
 
 
-def parse_label_fields(text: str) -> tuple[ParsedLabel, bool]:
-    """Split a label's text into mk_varenummer, varenavn, mk_ordrenr, stand
-    and part (empty when not found).
+def is_new_design(text: str) -> bool:
+    """Whether the text is from a label in the new, left-aligned design:
+    it has the words VARENR. or ORDRE NR., which the old design never
+    printed."""
+    return NEW_DESIGN_RE.search(text) is not None
 
-    Returns (fields, keywords_missing): keywords_missing is True when OUTLET
-    or STAND wasn't found, so the split is less certain. The STAND value is
-    kept as printed even if it isn't A/B/C (e.g. "AP"), so the user sees
-    what the label says.
+
+def _number_and_name(header: str) -> tuple[str, str]:
+    """The label's number and the name after it, from the text in front of
+    the order number."""
+    number = LABEL_NUMBER_RE.search(header)
+    if not number:
+        return "", _clean_varenavn(header)
+    # The name normally follows the number; text before it is stray text
+    # or (rarely) a line read out of order.
+    after = header[number.end() :].strip()
+    return WHITESPACE_RE.sub(" ", number["number"]), _clean_varenavn(after or header[: number.start()])
+
+
+def _clean_order_number(order_number: str) -> str:
+    return DIGIT_GROUP_DOT_RE.sub("", order_number.strip(" ,:"))
+
+
+def parse_label_fields(text: str) -> tuple[ParsedLabel, bool]:
+    """Split a label's text into mk_varenummer, varenavn, mk_ordrenr, stand,
+    part and - new design only - antal (empty when not found).
+
+    Returns (fields, keywords_missing): keywords_missing is True when the
+    label's words (OUTLET and STAND; on the new design VARENR., ORDRE NR.,
+    Antal and Stand, each exactly once) weren't all found, so the split is
+    less certain. The
+    STAND value is kept as printed even if it isn't A/B/C (e.g. "AP"), so
+    the user sees what the label says.
     """
+    if is_new_design(text):
+        return _parse_new_design(text)
     parsed_label = {"mk_varenummer": "", "varenavn": "", "mk_ordrenr": "", "stand": "", "part": ""}
     outlet = OUTLET_RE.search(text)
     stand = STAND_RE.search(text)
     header_end = min([match.start() for match in (outlet, stand) if match is not None] or [len(text)])
     header = text[:header_end].strip()
 
-    number = LABEL_NUMBER_RE.search(header)
-    if number:
-        parsed_label["mk_varenummer"] = WHITESPACE_RE.sub(" ", number["number"])
-        # The name normally follows the number; text before it is stray text
-        # or (rarely) a line read out of order.
-        after = header[number.end() :].strip()
-        name = after or header[: number.start()]
-    else:
-        name = header
-    parsed_label["varenavn"] = _clean_varenavn(name)
+    parsed_label["mk_varenummer"], parsed_label["varenavn"] = _number_and_name(header)
 
     if outlet is not None:
         order_end = stand.start() if stand is not None and stand.start() > outlet.end() else len(text)
-        parsed_label["mk_ordrenr"] = DIGIT_GROUP_DOT_RE.sub("", text[outlet.end() : order_end].strip(" ,:"))
+        parsed_label["mk_ordrenr"] = _clean_order_number(text[outlet.end() : order_end])
     if stand is not None and stand["stand"]:
         parsed_label["stand"] = stand["stand"].upper()
 
     parsed_label["part"] = item_part(parsed_label["mk_varenummer"], parsed_label["varenavn"])
     return parsed_label, outlet is None or stand is None
+
+
+def _parse_new_design(text: str) -> tuple[ParsedLabel, bool]:
+    """The new design: each field sits after its own printed word, so the
+    number and name are what follows VARENR., the order number what
+    follows ORDRE NR. - up to Antal/Stand on the label's bottom line."""
+    parsed_label = {
+        "mk_varenummer": "",
+        "varenavn": "",
+        "mk_ordrenr": "",
+        "stand": "",
+        "part": "",
+        "antal": "",
+    }
+    varenr = VARENR_RE.search(text)
+    ordre_nr = ORDRE_NR_RE.search(text)
+    antal = ANTAL_RE.search(text)
+    stand = STAND_RE.search(text)
+    bottom_line = min([match.start() for match in (antal, stand) if match is not None] or [len(text)])
+
+    if varenr is not None:
+        header_end = bottom_line
+        if ordre_nr is not None and ordre_nr.start() > varenr.end():
+            header_end = ordre_nr.start()
+        header = text[varenr.end() : max(header_end, varenr.end())].strip()
+        parsed_label["mk_varenummer"], parsed_label["varenavn"] = _number_and_name(header)
+    if ordre_nr is not None:
+        order_number = text[ordre_nr.end() : max(bottom_line, ordre_nr.end())]
+        parsed_label["mk_ordrenr"] = _clean_order_number(order_number)
+    if stand is not None and stand["stand"]:
+        parsed_label["stand"] = stand["stand"].upper()
+    if antal is not None:
+        # All of what follows Antal on its line must be the number: "1O"
+        # (24 read as) "2 4" or a smudge must not quietly become a quantity
+        antal_end = stand.start() if stand is not None and stand.start() > antal.end() else len(text)
+        value = text[antal.end() : antal_end].strip()
+        if value.isdigit() and int(value) > 0:
+            parsed_label["antal"] = str(int(value))
+
+    parsed_label["part"] = item_part(parsed_label["mk_varenummer"], parsed_label["varenavn"])
+    # Each word exactly once: twice means two labels were read as one (stacked
+    # or side by side), and the second one would be lost
+    keywords_missing = any(
+        len(word.findall(text)) != 1 for word in (VARENR_RE, ORDRE_NR_RE, ANTAL_RE, STAND_RE)
+    )
+    return parsed_label, keywords_missing
 
 
 def label_warnings(parsed_label: ParsedLabel, keywords_missing: bool) -> list[Warning]:
@@ -129,10 +219,17 @@ def label_warnings(parsed_label: ParsedLabel, keywords_missing: bool) -> list[Wa
     warnings = [
         ("missing", f"Kunne ikke læse {label}")
         for key, label in MISSING_FIELD_NAMES.items()
-        if not parsed_label[key]
+        if key in parsed_label and not parsed_label[key]
     ]
     if keywords_missing:
-        warnings.append(("partial", "Fandt ikke både OUTLET og STAND på labelen"))
+        if "antal" in parsed_label:
+            message = (
+                "Fandt ikke ordene VARENR., ORDRE NR., Antal og Stand præcis én gang hver - "
+                "er der mere end én label på billedet?"
+            )
+        else:
+            message = "Fandt ikke både OUTLET og STAND på labelen"
+        warnings.append(("partial", message))
     if parsed_label["stand"] and parsed_label["stand"] not in VALID_STANDS:
         warnings.append(("suspicious", f'Usædvanlig STAND på labelen: "{parsed_label["stand"]}"'))
     if parsed_label["mk_ordrenr"] and not VALID_ORDER_NUMBER_RE.fullmatch(parsed_label["mk_ordrenr"]):

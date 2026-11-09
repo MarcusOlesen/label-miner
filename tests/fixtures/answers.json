@@ -1,5 +1,5 @@
 {
- "_about": "Verified answers for the fixture photos - see tests/test_regression.py and tests/harness.py.",
+ "_about": "Verified answers for the fixture photos - see tests/test_regression.py and tests/harness.py. For 4-11 the product is the variant whose SKU is the label's number, with the name checked by eye; on every older photo that SKU is the variant verified by hand.",
  "24-9/IMG_0276.HEIC": {
   "mk_varenummer": "106466",
   "varenavn": "Sevilla U-sofa, venstrevendt Loop Mørk Beige",
@@ -190,5 +190,389 @@
   "expect": "review",
   "reason": "odd STAND",
   "note": "label prints 'STAND: AP'; sent to review, showing AP as printed"
+ },
+ "4-11/IMG_0974.JPG": {
+  "mk_varenummer": "103284",
+  "varenavn": "Nord spisebordsstol",
+  "mk_ordrenr": "152040",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "nord-spisebordsstol",
+   "variant": 54932797653369
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0975.JPG": {
+  "mk_varenummer": "103469",
+  "varenavn": "Roots sofabord, Ø80",
+  "mk_ordrenr": "156146",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "roots-sofabord-o80",
+   "variant": 55063350280569
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0976.JPG": {
+  "mk_varenummer": "102249",
+  "varenavn": "Forma spisebordsstol, PU læder/Eg",
+  "mk_ordrenr": "154908",
+  "stand": "A",
+  "antal": "2",
+  "shop": null,
+  "expect": "review",
+  "reason": "not on the shop: no result for the number, and the name search finds no Forma",
+  "design": "new",
+  "note": "two labels stacked, handwriting behind the text"
+ },
+ "4-11/IMG_0977.JPG": {
+  "mk_varenummer": "VN 61248-103",
+  "varenavn": "Vince tæppe, 230x160",
+  "mk_ordrenr": "156950",
+  "stand": "A",
+  "antal": "1",
+  "shop": {
+   "handle": "vince-taeppe-230x160-hvid",
+   "variant": 56366025507193
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "curved label, supplier code"
+ },
+ "4-11/IMG_0978.JPG": {
+  "mk_varenummer": "106854",
+  "varenavn": "Oris sofabord, marmor emperador | Ø82",
+  "mk_ordrenr": "157498",
+  "stand": "A",
+  "antal": "1",
+  "shop": {
+   "handle": "oris-sofabord-marmor-emperador-o82",
+   "variant": 56390611075449
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0979.JPG": {
+  "mk_varenummer": "AY 0000108453",
+  "varenavn": "Cholet sengebord, væghængt | vild eg",
+  "mk_ordrenr": "154165",
+  "stand": "B",
+  "antal": "1",
+  "shop": "unknown",
+  "expect": "review",
+  "reason": "no result for the supplier code; the recorded name search finds no Cholet, but one of its products is not recorded",
+  "design": "new",
+  "note": "supplier code"
+ },
+ "4-11/IMG_0980.JPG": {
+  "mk_varenummer": "102511",
+  "varenavn": "Plint spisebord, inkl. tillægsplade | 200/250x100",
+  "mk_ordrenr": "152973",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "plint-spisebord-inkl-tillaegsplade-200-250x100",
+   "variant": 54799961719161
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "sideways"
+ },
+ "4-11/IMG_0981.JPG": {
+  "mk_varenummer": "105672",
+  "varenavn": "Orion spisebord, Marmor/Egetræ | 120x120",
+  "mk_ordrenr": "155572",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "orion-spisebord-eg-travertin-120x120",
+   "variant": 55232435356025
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "sideways"
+ },
+ "4-11/IMG_0982.JPG": {
+  "mk_varenummer": "100388",
+  "varenavn": "Rupert spisebordsstol, Fløjl",
+  "mk_ordrenr": "155838",
+  "stand": "A",
+  "antal": "2",
+  "shop": {
+   "handle": "rupert-stol-flojl",
+   "variant": 47040978059601
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0983.JPG": {
+  "mk_varenummer": "103297",
+  "varenavn": "Holdbar spisebord, 200/300x100 | Ekskl. tillægsplader Latte",
+  "mk_ordrenr": "152406",
+  "stand": "B",
+  "shop": {
+   "handle": "holdbar-spisebord-200-300x100",
+   "variant": 54961002971513
+  },
+  "expect": "auto",
+  "design": "old",
+  "note": "old centred design in the same batch, wrinkled label"
+ },
+ "4-11/IMG_0984.JPG": {
+  "mk_varenummer": "103033",
+  "varenavn": "Struktur spisebordsstol, Egetræ | PU læder",
+  "mk_ordrenr": "154838",
+  "stand": "B",
+  "antal": "2",
+  "shop": {
+   "handle": "struktur-spisebordsstol-egetrae-pu-laeder",
+   "variant": 54830502117753
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0985.JPG": {
+  "mk_varenummer": "102686",
+  "varenavn": "Como puf",
+  "mk_ordrenr": "141807",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "como-puf",
+   "variant": 54819904520569
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0986.JPG": {
+  "mk_varenummer": "VN 63428-111",
+  "varenavn": "Sarasota spejl, 100x193",
+  "mk_ordrenr": "138433",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "sarasota-spejl-100x193",
+   "variant": 56345275924857
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "sideways, supplier code"
+ },
+ "4-11/IMG_0987.JPG": {
+  "mk_varenummer": "102163",
+  "varenavn": "Roots spisebord, Butterfly udtræk | 180/250x95",
+  "mk_ordrenr": "151243",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "roots-spisebord-180-250x95",
+   "variant": 55064214438265
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "sideways"
+ },
+ "4-11/IMG_0988.JPG": {
+  "mk_varenummer": "103162_1/2",
+  "varenavn": "1/2 Palermo chaiselong sofa, venstrevendt - Aragon Blå",
+  "mk_ordrenr": "124504",
+  "stand": "C",
+  "antal": "1",
+  "shop": {
+   "handle": "palermo-chaiselong-sofa-venstrevendt",
+   "variant": 54837956837753
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "part of an item; name runs over two lines"
+ },
+ "4-11/IMG_0989.JPG": {
+  "mk_varenummer": "108139",
+  "varenavn": "Sevilla hjørnesofa, højrevendt - Loop Creme",
+  "mk_ordrenr": "150019",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "sevilla-hjornesofa-hojrevendt",
+   "variant": 63738496680313
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "creased label"
+ },
+ "4-11/IMG_0990.JPG": {
+  "mk_varenummer": "102138",
+  "varenavn": "Sevilla chaiselong sofa, højrevendt",
+  "mk_ordrenr": "153446",
+  "stand": "A",
+  "antal": "1",
+  "shop": {
+   "handle": "sevilla-chaiselong-sofa-hojrevendt",
+   "variant": 49366511747409
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0991.JPG": {
+  "mk_varenummer": "101691",
+  "varenavn": "Paris chaiselong sofa, venstrevendt | open end",
+  "mk_ordrenr": "107266",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "paris-chaiselong-m-hvilemodul-venstrevendt",
+   "variant": 49068999508305
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0992.JPG": {
+  "mk_varenummer": "102025",
+  "varenavn": "Paris chaiselong sofa, venstrevendt",
+  "mk_ordrenr": "115998",
+  "stand": "C",
+  "antal": "1",
+  "shop": {
+   "handle": "paris-chaiselong-sofa-venstrevendt",
+   "variant": 49349307957585
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0993.JPG": {
+  "mk_varenummer": "101666",
+  "varenavn": "Paris chaiselong sofa, højrevendt | open end",
+  "mk_ordrenr": "104034",
+  "stand": "C",
+  "antal": "1",
+  "shop": {
+   "handle": "paris-chaiselong-m-hvilemodul-hojrevendt",
+   "variant": 49068638962001
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0994.JPG": {
+  "mk_varenummer": "106297",
+  "varenavn": "Aura XL 3 personers sofa",
+  "mk_ordrenr": "152332",
+  "stand": "A",
+  "antal": "1",
+  "shop": {
+   "handle": "aura-xl-3-personers-sofa",
+   "variant": 55514803929465
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0995.JPG": {
+  "mk_varenummer": "106106",
+  "varenavn": "Oasis hjørnesofa, venstrevendt",
+  "mk_ordrenr": "133333",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "oasis-hjornesofa-venstrevendt",
+   "variant": 55396342661497
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0996.JPG": {
+  "mk_varenummer": "106442",
+  "varenavn": "Sevilla U-sofa, venstrevendt",
+  "mk_ordrenr": "154034",
+  "stand": "A",
+  "antal": "1",
+  "shop": {
+   "handle": "sevilla-u-sofa-venstrevendt",
+   "variant": 55634554716537
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0997.JPG": {
+  "mk_varenummer": "100603",
+  "varenavn": "Copenhagen 2 personers sofa",
+  "mk_ordrenr": "125234",
+  "stand": "B",
+  "antal": "1",
+  "shop": "unknown",
+  "expect": "review",
+  "reason": "no recorded webshop answer for this number",
+  "design": "new"
+ },
+ "4-11/IMG_0998.JPG": {
+  "mk_varenummer": "107045",
+  "varenavn": "Madrid XL chaiselong sofa højrevendt",
+  "mk_ordrenr": "157686",
+  "stand": "A",
+  "antal": "1",
+  "shop": {
+   "handle": "madrid-xl-chaiselong-sofa-hojrevendt",
+   "variant": 56575721668985
+  },
+  "expect": "auto",
+  "design": "new"
+ },
+ "4-11/IMG_0999.JPG": {
+  "mk_varenummer": "105599",
+  "varenavn": "Puffy puf, 64x95",
+  "mk_ordrenr": "132940",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "puffy-puf-64x95",
+   "variant": 55227139326329
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "same order number as IMG_1001, different item"
+ },
+ "4-11/IMG_1001.JPG": {
+  "mk_varenummer": "105500",
+  "varenavn": "Puffy 2 personers sofa",
+  "mk_ordrenr": "132940",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "puffy-2-personers-sofa",
+   "variant": 55224499044729
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "same order number as IMG_0999, different item"
+ },
+ "4-11/IMG_1002.JPG": {
+  "mk_varenummer": "103485",
+  "varenavn": "Curve spisebordsstol",
+  "mk_ordrenr": "Lager",
+  "stand": "A",
+  "antal": "24",
+  "shop": {
+   "handle": "curve-spisebordsstol",
+   "variant": 55076320739705
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "order number is the word Lager"
+ },
+ "4-11/IMG_1003.JPG": {
+  "mk_varenummer": "103484",
+  "varenavn": "Curve spisebordsstol",
+  "mk_ordrenr": "Lager",
+  "stand": "A",
+  "antal": "10",
+  "shop": {
+   "handle": "curve-spisebordsstol",
+   "variant": 55076320706937
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "order number is the word Lager"
  }
 }

@@ -89,6 +89,14 @@ def review_question(warnings: list[tuple[str, str]], part: str = "") -> dict | N
             ],
             "color": COLOR_WARNING,
         }
+    if "by_number" in by_category:
+        return {
+            "title": "Er det den rigtige vare?",
+            "detail": by_category["by_number"][0],
+            "fields": ["varenavn"],
+            "others": others("by_number"),
+            "color": COLOR_WARNING,
+        }
     if "by_name" in by_category:
         return {
             "title": "Er det den rigtige vare?",

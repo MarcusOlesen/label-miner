@@ -3,14 +3,15 @@
 from pathlib import Path
 from threading import Lock
 
+from .choices import remembered_choice
 from .ocr import label_blocks_in_reading_order, label_box, load_label_photo, read_text_blocks
 from .parsing import label_warnings, parse_label_fields, part_note
-from .shop import format_combined_price, look_up_product
+from .shop import format_combined_price, look_up_product, remembered_candidate
 from .util import debug_log
 
 
 def extract_label(
-    engine, image_path: Path, session, cache: dict, cache_lock: Lock
+    engine, image_path: Path, session, cache: dict, cache_lock: Lock, choices: dict | None = None
 ) -> tuple[str, dict, list[tuple[str, str]], list[dict]]:
     """Read one label photo and find its product.
 
@@ -22,7 +23,9 @@ def extract_label(
     ``engine`` is a RapidOCR engine (see ocr.create_ocr_engine) and
     ``session`` a requests.Session; the tests pass recorded stand-ins. Runs
     on up to OCR_WORKERS threads at once, sharing one engine and one webshop
-    cache (guarded by cache_lock).
+    cache (guarded by cache_lock). ``choices`` are the user's remembered
+    choices (see choices.py): a label that goes to review gets its
+    remembered product as the first suggestion.
     """
     image = load_label_photo(image_path)
     blocks = read_text_blocks(engine, image)
@@ -61,6 +64,17 @@ def extract_label(
         parsed_label["part"],
     )
     warnings.extend(shop_warnings)
+    candidates = shop_result["candidates"]
+    if warnings:  # a remembered choice is only ever a suggestion, never an approval
+        candidates = with_remembered_choice(
+            session,
+            cache,
+            cache_lock,
+            choices,
+            parsed_label["mk_varenummer"],
+            parsed_label["varenavn"],
+            candidates,
+        )
     if shop_result["varenavn"]:
         # A certain match: use the shop's own name rather than the OCR text
         parsed_label["varenavn"] = shop_result["varenavn"]
@@ -69,4 +83,25 @@ def extract_label(
         parsed_label["price"] = part_note(parsed_label["part"])
     parsed_label["compare_price"] = shop_result["compare_price"]
     parsed_label["url"] = shop_result["url"]
-    return text, parsed_label, warnings, shop_result["candidates"]
+    return text, parsed_label, warnings, candidates
+
+
+def with_remembered_choice(
+    session,
+    cache: dict,
+    cache_lock: Lock,
+    choices: dict | None,
+    mk_varenummer: str,
+    varenavn: str,
+    candidates,
+) -> list[dict]:
+    """The suggestions, with the product the user picked for this label
+    before (see choices.py) first - if there is one and the shop still has
+    it as it was."""
+    choice = remembered_choice(choices, mk_varenummer, varenavn)
+    if choice is None:
+        return candidates
+    remembered = remembered_candidate(session, cache, cache_lock, choice)
+    if remembered is None:
+        return candidates
+    return [remembered] + [candidate for candidate in candidates if candidate.get("id") != remembered["id"]]

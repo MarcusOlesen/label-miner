@@ -27,6 +27,7 @@ from ..batch import (
     load_images_from_zip,
     unique_export_path,
 )
+from ..choices import load_choices, remember_choice, save_choices
 from ..config import (
     APP_VERSION,
     COLOR_ERROR,
@@ -42,6 +43,7 @@ from ..config import (
 from ..ocr import create_ocr_engine, remove_temporary_files, save_temporary_png
 from ..pipeline import extract_label
 from ..review import warning_messages
+from ..settings import load_settings, save_settings
 from ..util import debug_log
 from .review_window import ReviewWindow
 from .theme import accent_button_style, open_manual, set_window_icon
@@ -95,6 +97,11 @@ class LabelMinerApp:
 
         self.status = tk.StringVar(value="Indlæser OCR-modellerne...")
         self.selected_count = tk.StringVar(value="Valgte billeder: 0")
+        # Kept between runs (see settings.py and choices.py)
+        self.settings = load_settings()
+        self.choices = load_choices()
+        # The export's STK: one per photo, or - when ticked - the label's Antal (see batch.pieces)
+        self.stk_from_antal = tk.BooleanVar(value=self.settings["stk_from_antal"])
 
         # The window shows one of three "screens" at a time: a boot screen
         # while the OCR models load, a select screen with one big button,
@@ -210,6 +217,30 @@ class LabelMinerApp:
                 wraplength=380,
                 justify="center",
             ).pack(pady=(12, 0))
+
+        # A setting for the batch, chosen before it starts: off, each photo is one piece
+        ttk.Checkbutton(
+            center,
+            text="STK = labelens Antal (ét billede pr. label)",
+            variable=self.stk_from_antal,
+            command=self._save_settings,
+        ).pack(pady=(24, 0))
+        ttk.Label(
+            center,
+            text="Slået fra: hvert billede tæller som 1 stk.",
+            foreground=COLOR_MUTED,
+        ).pack()
+
+    def remember_choice(self, mk_varenummer, varenavn, candidate):
+        """The user approved a label with this webshop product picked: offer
+        it first next time (see choices.py). Runs on the main thread; the
+        workers only read the dict."""
+        if remember_choice(self.choices, mk_varenummer, varenavn, candidate):
+            save_choices(self.choices)
+
+    def _save_settings(self):
+        self.settings["stk_from_antal"] = self.stk_from_antal.get()
+        save_settings(self.settings)
 
     def _build_work_screen(self):
         self.work_frame = ttk.Frame(self.screen_container)
@@ -458,6 +489,7 @@ class LabelMinerApp:
                 self.http_session,
                 self.price_cache,
                 self.price_cache_lock,
+                self.choices,
             )
         except Exception as error:
             raw_text = ""
@@ -830,7 +862,7 @@ class LabelMinerApp:
             workbook = Workbook()
             worksheet = workbook.active
             worksheet.title = "Label Miner"
-            rows = excel_rows(self.records, self.source_folder_name)
+            rows = excel_rows(self.records, self.source_folder_name, self.stk_from_antal.get())
             worksheet.append(rows[0])
             worksheet.append(EXCEL_COLUMNS)
             for row in rows[1:]:
@@ -847,7 +879,7 @@ class LabelMinerApp:
         self.export_ready_label.configure(text=f"✅ Excel gemt: {self.export_path.name}", foreground=COLOR_OK)
 
     def _copy_result(self):
-        rows = excel_rows(self.records, self.source_folder_name)
+        rows = excel_rows(self.records, self.source_folder_name, self.stk_from_antal.get())
         values = ["\t".join(str(value) for value in row[: len(COPY_COLUMNS)]) for row in rows]
         self.root.clipboard_clear()
         self.root.clipboard_append("\n".join(values))
@@ -895,6 +927,7 @@ class LabelMinerApp:
                 self.http_session,
                 self.price_cache,
                 self.price_cache_lock,
+                self.choices,
             )
             record.update(
                 raw_text=raw_text,

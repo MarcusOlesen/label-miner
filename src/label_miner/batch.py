@@ -156,11 +156,40 @@ def unique_export_path(directory: Path, base_name: str) -> Path:
         counter += 1
 
 
-def excel_rows(records: list[dict], batch_name: str) -> list[list]:
+def _antal(record: dict) -> int | None:
+    value = record["parsed"].get("antal", "")
+    return int(value) if value.isdigit() and int(value) > 0 else None
+
+
+def pieces(records: list[dict], stk_from_antal: bool = False) -> int:
+    """STK for photos of one item.
+
+    By default each photo is one piece. With stk_from_antal (a setting on
+    the start screen, off by default) each photo is as many pieces as its
+    label's Antal says - for when one photo is taken per label rather than
+    per piece; a label without Antal (the old design, or not read) counts
+    one."""
+    if not stk_from_antal:
+        return len(records)
+    return sum(_antal(record) or 1 for record in records)
+
+
+def _stk_note(records: list[dict], stk_from_antal: bool) -> str:
+    """A comment when STK may count the same pieces twice: several photos of
+    one item whose labels say Antal 2+ - a retake, or each piece's label
+    showing the whole order line's Antal."""
+    if not stk_from_antal or len(records) < 2:
+        return ""
+    if not any((_antal(record) or 1) > 1 for record in records):
+        return ""
+    return f"OBS: {len(records)} billeder af samme vare med Antal - tjek STK"
+
+
+def excel_rows(records: list[dict], batch_name: str, stk_from_antal: bool = False) -> list[list]:
     """The export's rows: the batch name, then one row per item.
 
     Photos of the same item (same MK number, order number and STAND) become
-    one row with STK = the number of photos. Rows whose three fields are all
+    one row, with STK counted as stk_from_antal says (see pieces). Rows whose three fields are all
     empty (e.g. an unreadable photo) are never merged, as they can't be told
     apart. Warnings left on a record go into the comments column, so an
     unchecked row is visible in the sheet.
@@ -172,17 +201,16 @@ def excel_rows(records: list[dict], batch_name: str) -> list[list]:
         key = (parsed.get("mk_varenummer", ""), parsed.get("mk_ordrenr", ""), parsed.get("stand", ""))
         if not any(key):
             key = ("__unique__", id(record))
-        group = groups.setdefault(key, {"first": record, "count": 0, "image_names": []})
-        group["count"] += 1
+        group = groups.setdefault(key, {"first": record, "records": [], "image_names": []})
+        group["records"].append(record)
         group["image_names"].append(record["path"].name)
 
     for group in groups.values():
         record = group["first"]
         parsed = record["parsed"]
-        comments = parsed.get("price", "")
-        if record.get("warnings"):
-            warning_text = " | ".join(warning_messages(record["warnings"]))
-            comments = " | ".join(value for value in (comments, warning_text) if value)
+        warning_text = " | ".join(warning_messages(record.get("warnings") or []))
+        stk_note = _stk_note(group["records"], stk_from_antal)
+        comments = " | ".join(value for value in (parsed.get("price", ""), warning_text, stk_note) if value)
         rows.append(
             [
                 "",
@@ -190,7 +218,7 @@ def excel_rows(records: list[dict], batch_name: str) -> list[list]:
                 parsed.get("mk_varenummer", ""),
                 parsed.get("mk_ordrenr", ""),
                 parsed.get("stand", ""),
-                group["count"],
+                pieces(group["records"], stk_from_antal),
                 "X",
                 comments,
                 "",
