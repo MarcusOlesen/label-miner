@@ -161,4 +161,7 @@ def test_stk_from_antal_flags_a_possible_double_count():
     ]
     [item] = excel_rows(records, "4-11", stk_from_antal=True)[1:]
     assert item[5] == 4
-    assert item[7] == "999 kr | OBS: 2 billeder af samme vare med Antal - tjek STK"
+    assert item[7] == "999 kr | OBS: flere billeder af samme vare med Antal - tjek STK"
+    # No number in the note: Label Printer reads the column's highest number as
+    # the recommended price, and a part of an item has no price of its own
+    assert not any(character.isdigit() for character in item[7].split("|")[-1])

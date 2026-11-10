@@ -177,12 +177,14 @@ def pieces(records: list[dict], stk_from_antal: bool = False) -> int:
 def _stk_note(records: list[dict], stk_from_antal: bool) -> str:
     """A comment when STK may count the same pieces twice: several photos of
     one item whose labels say Antal 2+ - a retake, or each piece's label
-    showing the whole order line's Antal."""
+    showing the whole order line's Antal. Without a number in it: this
+    column is read as the recommended price downstream (Label Printer takes
+    the highest number in it)."""
     if not stk_from_antal or len(records) < 2:
         return ""
     if not any((_antal(record) or 1) > 1 for record in records):
         return ""
-    return f"OBS: {len(records)} billeder af samme vare med Antal - tjek STK"
+    return "OBS: flere billeder af samme vare med Antal - tjek STK"
 
 
 def excel_rows(records: list[dict], batch_name: str, stk_from_antal: bool = False) -> list[list]:

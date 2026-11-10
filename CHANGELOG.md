@@ -12,9 +12,10 @@
   in `%APPDATA%\Label Miner\settings.json` - the app's first saved setting. Photos of the same item
   (number, order number, STAND) still make one row. With the setting on, when several photos of one
   item say Antal 2 or more, the comments column asks to check STK, as the same pieces may be counted
-  twice. The review window has an Antal field. A new label is reviewed when its Antal can't be read
-  as a whole number ("1O", "2 4"), or when one of its words appears twice - two labels in one photo,
-  where the second would otherwise be lost.
+  twice - with no number in the note, as Label Printer reads that column's highest number as the
+  recommended price. The review window has an Antal field. A new label is reviewed when its Antal
+  can't be read as a whole number ("1O", "2 4"), or when one of its words appears twice - two labels
+  in one photo, where the second would otherwise be lost.
 - An "à" in the name is read as "å" (RapidOCR reads "Blå" as "Blà").
 - The 4-11 batch (28 new-design labels, 1 old) is in the test photos: every field of all 29 labels
   is read right, 26 are approved automatically (25 new, 1 old) and nothing wrong is approved. The
