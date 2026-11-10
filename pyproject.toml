@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "label-miner"
-version = "2.2"
+version = "2.3"
 description = "Reads price labels on photos of furniture, finds the products on the webshop and exports a spreadsheet."
 readme = "README.md"
 license = "MIT"

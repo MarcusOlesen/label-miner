@@ -1,46 +1,46 @@
 # Changelog
 
-## Unreleased
-- The new label design (left-aligned, "OUTLET · VARENR.", "ORDRE NR.", "Antal" and "Stand") is
-  read. Both designs are supported side by side: each photo's design is told by the words on the
-  label (VARENR. or ORDRE NR. in capitals mean the new one). The new design's lines are those that
-  start inside the area its words mark out, measured along the label's own lines, so box print,
+## 2.3 - 2026-11-10
+- The new label design (left-aligned, "OUTLET · VARENR.", "ORDRE NR.", "Antal" and "Stand") is read.
+  Both designs are supported side by side: each photo's design is told by the words on the label
+  (VARENR. or ORDRE NR. in capitals mean the new one). The new design's lines are those that start
+  inside the area its words mark out, measured along the label's own lines, so box print,
   handwriting and a tilted, curved or sideways label are handled. Old labels are read as before.
 - "Antal" is read. STK is still one per photo by default; a setting on the start screen, "STK =
   labelens Antal", makes each photo count as its label's Antal instead (for one photo per label
-  rather than per piece; a label without Antal counts one). The setting is remembered between
-  runs, in `%APPDATA%\Label Miner\settings.json` - the app's first saved setting. Photos of the same item (number, order
-  number, STAND) still make one row. With the setting on, when several photos of one item say
-  Antal 2 or more, the comments column asks to check STK, as the same pieces may be counted twice.
-  The review window has an Antal field. A new label is reviewed when its Antal can't be read as a
-  whole number ("1O", "2 4"), or when one of its words appears twice - two labels in one photo,
+  rather than per piece; a label without Antal counts one). The setting is remembered between runs,
+  in `%APPDATA%\Label Miner\settings.json` - the app's first saved setting. Photos of the same item
+  (number, order number, STAND) still make one row. With the setting on, when several photos of one
+  item say Antal 2 or more, the comments column asks to check STK, as the same pieces may be counted
+  twice. The review window has an Antal field. A new label is reviewed when its Antal can't be read
+  as a whole number ("1O", "2 4"), or when one of its words appears twice - two labels in one photo,
   where the second would otherwise be lost.
 - An "à" in the name is read as "å" (RapidOCR reads "Blå" as "Blà").
 - The 4-11 batch (28 new-design labels, 1 old) is in the test photos: every field of all 29 labels
   is read right, 26 are approved automatically (25 new, 1 old) and nothing wrong is approved. The
   other 3 aren't on the webshop.
-- The item number picks the variant: on the webshop every variant (colour, size) has the item
-  number as its SKU, so the label's number says which variant it is - also when the name doesn't
-  give the colour, as new labels often don't. The label's name must still agree with that variant,
-  or the label is reviewed, with the number's variant as the first suggestion. A typed number alone
-  fills in its exact variant. On every older fixture photo the SKU is the variant verified by
-  hand; on the 4-11 batch it takes the new design from 7 to 25 of 28 approved automatically. A
-  label without its colour now depends on its number alone for the colour: sibling colours often
-  have neighbouring numbers (Curve 103484 Brun, 103485 Beige), so a misread digit would give the
-  wrong colour.
+- The item number picks the variant: on the webshop every variant (colour, size) has the item number
+  as its SKU, so the label's number says which variant it is - also when the name doesn't give the
+  colour, as new labels often don't. The label's name must still agree with that variant, or the
+  label is reviewed, with the number's variant as the first suggestion. A typed number alone fills
+  in its exact variant. On every older fixture photo the SKU is the variant verified by hand; on the
+  4-11 batch it takes the new design from 7 to 25 of 28 approved automatically. A label without its
+  colour now depends on its number alone for the colour: sibling colours often have neighbouring
+  numbers (Curve 103484 Brun, 103485 Beige), so a misread digit would give the wrong colour.
 - The label guide shows the new design.
 - Remembered choices: when a label is approved in the review window with one of the webshop's
-  suggestions picked, that product is remembered for the label's number (supplier prefix
-  included) and name, in `%APPDATA%\Label Miner\choices.json`. The next label with the same
-  number and name - a repeating German label, a supplier code the shop doesn't know - gets that product first, already selected and marked "valgt før (2
-  gange)", with today's price. It is only a suggestion: the label still goes to review, and a
-  label approved automatically is never changed by it. A remembered product the shop no longer
-  has, or has renamed, is not offered. Picking another product for the same label replaces the
-  remembered one. A typed price without a picked product is not remembered.
+  suggestions picked, that product is remembered for the label's number (supplier prefix included)
+  and name, in `%APPDATA%\Label Miner\choices.json`. The next label with the same number and name -
+  a repeating German label, a supplier code the shop doesn't know - gets that product first, already
+  selected and marked "valgt før (2 gange)", with today's price. It is only a suggestion: the label
+  still goes to review, and a label approved automatically is never changed by it. A remembered
+  product the shop no longer has, or has renamed, is not offered. Picking another product for the
+  same label replaces the remembered one. A typed price without a picked product is not remembered.
 - "Søg på hjemmesiden igen" with only an item number typed (no name) now fills in the fields: a
-  product with one variant fills in name, price and link; several variants are all offered as
-  cards. Before, an empty name matched nothing, so nothing was filled in. Such a result is only a
-  suggestion - the label still needs "Godkend" - and a part of an item still gets no price.
+  product with one variant fills in name, price and link; several variants are all offered as cards
+  - unless one variant has the number as its SKU, which is then filled in (see above). Before, an
+  empty name matched nothing, so nothing was filled in. Such a result is only a suggestion - the
+  label still needs "Godkend" - and a part of an item still gets no price.
 - When the webshop refuses a search for being one too many (HTTP 429), the message says so and to
   wait a minute and search again, instead of a bare error. The review window shows why a search
   failed, under the button.
