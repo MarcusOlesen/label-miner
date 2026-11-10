@@ -593,7 +593,9 @@ def labelguide():
             "Delen skrevet sidst i navnet – så bliver den ikke fanget.",
         ),
     ]
-    rows = [[p("✓&nbsp;&nbsp;Det bygger programmet på", head), "", p("✗&nbsp;&nbsp;Det bryder det", head)]]
+    rows = [
+        [p("✓&nbsp;&nbsp;Det bygger programmet på", head), "", p("✗&nbsp;&nbsp;Det giver problemer", head)]
+    ]
     for good, bad in pairs:
         rows.append([p(good, item), "", p(bad, item)])
     rules = Table(rows, colWidths=[half, gap, half])
