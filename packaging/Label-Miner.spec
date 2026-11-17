@@ -29,11 +29,41 @@ datas = []
 binaries = []
 hiddenimports = ["label_miner.ui.app"]
 
+# RapidOCR can also run on PyTorch, Paddle, OpenVINO, TensorRT and MNN, but
+# the app only uses onnxruntime (see ocr.create_ocr_engine). collect_all would
+# take the other engines along - and with them PyTorch, transformers, scipy,
+# pandas and more whenever they happen to be installed, tripling the
+# installer. Tested: OCR runs and reads the same text with all of these blocked.
+UNUSED_RAPIDOCR_ENGINES = [
+    f"rapidocr.inference_engine.{engine}" for engine in ("pytorch", "paddle", "openvino", "tensorrt", "mnn")
+]
+EXCLUDES = UNUSED_RAPIDOCR_ENGINES + [
+    "torch",
+    "torchvision",
+    "transformers",
+    "paddle",
+    "openvino",
+    "tensorrt",
+    "MNN",
+    "scipy",
+    "pandas",
+    "matplotlib",
+    "sympy",
+    "jedi",
+    "IPython",
+    "tensorboard",
+]
+
+
+def is_excluded(module_name):
+    return any(module_name == name or module_name.startswith(name + ".") for name in EXCLUDES)
+
+
 for package_name in NEEDS_COLLECT_ALL:
     package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
     datas += package_datas
     binaries += package_binaries
-    hiddenimports += package_hiddenimports
+    hiddenimports += [name for name in package_hiddenimports if not is_excluded(name)]
 
 # util.resource_path() looks for this at the root of the bundle.
 datas += [(ICON, ".")]
@@ -47,7 +77,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=EXCLUDES,
     noarchive=False,
 )
 pyz = PYZ(a.pure)

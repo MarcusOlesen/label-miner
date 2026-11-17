@@ -24,10 +24,29 @@ def test_a_damaged_file_means_the_defaults(tmp_path):
 def test_unknown_keys_are_ignored(tmp_path):
     path = tmp_path / "settings.json"
     path.write_text('{"stk_from_antal": true, "something_old": 1}', encoding="utf-8")
-    assert load_settings(path) == {"stk_from_antal": True}
+    assert load_settings(path) == {**DEFAULTS, "stk_from_antal": True}
 
 
 def test_a_file_that_cant_be_written_is_no_error(tmp_path):
     blocked = tmp_path / "a file, not a folder"
     blocked.write_text("", encoding="utf-8")
     save_settings(DEFAULTS, blocked / "settings.json")  # must not raise
+
+
+def test_the_defaults():
+    """Save the Excel file next to the photos without opening it, remember
+    the products picked, one piece per photo, the dark look."""
+    assert DEFAULTS == {
+        "stk_from_antal": False,
+        "save_excel": True,
+        "export_folder": "",
+        "open_excel": False,
+        "remember_choices": True,
+        "appearance": "dark",
+    }
+
+
+def test_a_value_a_setting_doesnt_take_means_the_default(tmp_path):
+    path = tmp_path / "settings.json"
+    path.write_text('{"appearance": "purple", "export_folder": "D:/Eksport"}', encoding="utf-8")
+    assert load_settings(path) == {**DEFAULTS, "export_folder": "D:/Eksport"}

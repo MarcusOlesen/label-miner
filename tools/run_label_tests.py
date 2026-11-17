@@ -67,20 +67,17 @@ def main() -> int:
 
     for name in names:
         answer = answers[name]
-        text, parsed, warnings, candidates = extract_label(
-            engine, photo_root / name, session, shop_cache, lock
-        )
-        verdict, problems = score(answer, parsed, warnings, candidates)
+        record = extract_label(engine, photo_root / name, session, shop_cache, lock)
+        verdict, problems = score(answer, record)
         counts[verdict] += 1
         if any("not among the suggestions" in problem for problem in problems):
             not_offered.append(name)
         if problems or args.verbose or verdict == "WRONG":
             print(f"\n{verdict:9} {name}")
-            print(f"          text: {text}")
-            print(
-                f"          read: {json.dumps({k: parsed.get(k) for k in SHOWN_FIELDS}, ensure_ascii=False)}"
-            )
-            for _, message in warnings:
+            print(f"          text: {record.raw_text}")
+            read = {k: v for k, v in record.editable_fields().items() if k in SHOWN_FIELDS}
+            print(f"          read: {json.dumps(read, ensure_ascii=False)}")
+            for _, message in record.warnings:
                 print(f"          ! {message}")
             for problem in problems:
                 print(f"          x {problem}")

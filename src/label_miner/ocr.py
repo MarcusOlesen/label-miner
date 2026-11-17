@@ -3,31 +3,20 @@
 OCR reads everything in the photo - the label, but also other stickers,
 shipping labels and printing on the box. ``label_blocks_in_reading_order``
 keeps only the text that belongs to the label and puts its lines in order,
-using the label's layout. Two designs are in use side by side (see
-``parsing.is_new_design``): the old one has every line centred around the
-words OUTLET and STAND; the new one has left-aligned lines from "OUTLET ·
-VARENR." down to "Antal" on the left and "Stand" on the far right.
+using the layout of the label's design (see designs.py).
 """
 
-import math
 import os
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 
 from .config import MAX_IMAGE_SIDE
-from .parsing import (
-    LABEL_ANCHOR_RE,
-    LABEL_NUMBER_RE,
-    NEW_DESIGN_KEYWORD_RE,
-    OUTLET_RE,
-    STAND_RE,
-    WHITESPACE_RE,
-    is_new_design,
-)
+from .designs import design_of
+from .geometry import TextBlock, axes, direction_of, dot, parallel, span, turned_clockwise
+from .parsing import LABEL_NUMBER_RE, OUTLET_RE, STAND_RE, WHITESPACE_RE
 from .util import debug_log
 
 # iPhone photos are HEIC; this teaches Pillow to open them.
@@ -46,51 +35,6 @@ def create_ocr_engine():  # -> rapidocr.RapidOCR
     from rapidocr import RapidOCR
 
     return RapidOCR(params={"Global.log_level": "warning"})
-
-
-@dataclass
-class TextBlock:
-    """One line of OCR'd text and where it sits in the photo, in pixels from
-    the top-left corner."""
-
-    text: str
-    left: float
-    top: float
-    right: float
-    bottom: float
-    # The direction the line runs in, in degrees from -90 to 90: 0 is level,
-    # positive slopes down to the right, +-90 is sideways
-    direction: float = 0.0
-    # The corner points of the text itself, which follow it when it is
-    # tilted (empty: the upright box's corners)
-    corners: list = field(default_factory=list)
-
-    @property
-    def points(self) -> list:
-        if self.corners:
-            return self.corners
-        return [
-            (self.left, self.top),
-            (self.right, self.top),
-            (self.right, self.bottom),
-            (self.left, self.bottom),
-        ]
-
-    @property
-    def width(self) -> float:
-        return self.right - self.left
-
-    @property
-    def height(self) -> float:
-        return self.bottom - self.top
-
-    @property
-    def center_x(self) -> float:
-        return (self.left + self.right) / 2
-
-    @property
-    def center_y(self) -> float:
-        return (self.top + self.bottom) / 2
 
 
 def load_label_photo(image_path: Path) -> Image.Image:
@@ -152,63 +96,26 @@ def read_text_blocks(engine, image: Image.Image) -> list[TextBlock]:
 
     blocks = []
     for pieces in lines:
-        along, _ = _axes(_direction(pieces[0][1]))
-        pieces.sort(key=lambda piece: min(_dot(point, along) for point in piece[1]))
+        along, _ = axes(direction_of(pieces[0][1]))
+        pieces.sort(key=lambda piece: min(dot(point, along) for point in piece[1]))
         corners = [point for _, points in pieces for point in points]
         xs = [x for x, _ in corners]
         ys = [y for _, y in corners]
         text = " ".join(piece_text for piece_text, _ in pieces)
-        blocks.append(TextBlock(text, min(xs), min(ys), max(xs), max(ys), _direction(pieces[0][1]), corners))
+        blocks.append(
+            TextBlock(text, min(xs), min(ys), max(xs), max(ys), direction_of(pieces[0][1]), corners)
+        )
     return blocks
-
-
-# Lines of one label run within 6 degrees of each other in every photo
-# measured, while tilted print on the box nearby runs 12 degrees or more off
-PARALLEL_LIMIT = 10
-
-
-def _direction(points) -> float:
-    """The direction of the longer side of a piece's box (see
-    TextBlock.direction). RapidOCR doesn't always start its corner points
-    where the text starts."""
-    (x0, y0), (x1, y1), (x2, y2) = points[:3]
-    if math.hypot(x1 - x0, y1 - y0) < math.hypot(x2 - x1, y2 - y1):
-        (x0, y0), (x1, y1) = (x1, y1), (x2, y2)
-    return _folded(math.degrees(math.atan2(y1 - y0, x1 - x0)))
-
-
-def _folded(direction: float) -> float:
-    """The same direction between -90 and 90 degrees, so it points right."""
-    return (direction + 90) % 180 - 90
-
-
-def _parallel(direction: float, other: float) -> bool:
-    difference = abs(direction - other) % 180
-    return min(difference, 180 - difference) <= PARALLEL_LIMIT
-
-
-def _axes(direction: float):
-    """Unit vectors along a line running in this direction, and across it."""
-    radians = math.radians(direction)
-    return (math.cos(radians), math.sin(radians)), (-math.sin(radians), math.cos(radians))
-
-
-def _dot(point, axis) -> float:
-    return point[0] * axis[0] + point[1] * axis[1]
 
 
 def _same_line(points, other_points) -> bool:
     """Whether two pieces are parts of one printed line: parallel, level
     with each other, and no more than a word space (half a line height)
     apart."""
-    direction = _direction(points)
-    if not _parallel(direction, _direction(other_points)):
+    direction = direction_of(points)
+    if not parallel(direction, direction_of(other_points)):
         return False
-    along, across = _axes(direction)
-
-    def span(corners, axis):
-        values = [_dot(point, axis) for point in corners]
-        return min(values), max(values)
+    along, across = axes(direction)
 
     (top, bottom), (other_top, other_bottom) = span(points, across), span(other_points, across)
     (start, end), (other_start, other_end) = span(points, along), span(other_points, along)
@@ -227,22 +134,9 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     Photos often contain other text next to the label - a second sticker,
     a shipping label, printing on the box, handwriting - which would
     otherwise end up in the fields. And RapidOCR's own order doesn't always
-    follow the lines.
-
-    The new design (see parsing.is_new_design) has its lines left-aligned
-    instead, and its printed words mark out the label's area; see
-    _left_aligned_label. The rest of this applies to both designs.
-
-    Old labels are printed with every line centred, so the label is found by
-    starting from the block(s) containing OUTLET/STAND and growing outward
-    to blocks that are (a) close to the label along the direction its lines
-    advance, (b) centred on the same axis and (c) parallel to OUTLET/STAND.
-    A sticker right next to the label fails (b); text further down the box
-    fails (a); tilted print on the box fails (c) - its upright box is much
-    larger than the text, so it can overlap the label. Measured on the
-    fixture photos, the label's own lines are at most 0.06 label widths off
-    its axis and the nearest stray text 0.2, so the limit is 0.12; and a
-    gap of up to two lines still lets a line the OCR missed be skipped.
+    follow the lines. Which blocks are the label's own lines depends on its
+    design (see LabelDesign.label_lines); the rest of this applies to every
+    design.
 
     A label photographed sideways is read by the OCR line by line just
     fine - only the order comes out wrong - so its blocks are turned a
@@ -255,9 +149,10 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     "06×06"), so extract_label re-reads a sideways photo turned upright
     (see ``turn``).
 
-    Falls back to all blocks in RapidOCR's order when there is no OUTLET or
-    STAND to anchor on."""
-    anchors = [block for block in blocks if LABEL_ANCHOR_RE.search(block.text)]
+    Falls back to all blocks in RapidOCR's order when the design's anchor
+    words (OUTLET, STAND) aren't there to anchor on."""
+    design = design_of(" ".join(block.text for block in blocks))
+    anchors = [block for block in blocks if design.anchor_re.search(block.text)]
     if not anchors:
         return blocks, 0
     # Every block is one line, and a line is much wider than tall unless
@@ -265,24 +160,11 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     sideways = sum(1 for block in anchors if block.height > block.width) * 2 > len(anchors)
     # From here on the label's lines run left to right, one below the other
     # (or upside down, see direction)
-    upright = [_turned_clockwise(block) for block in blocks] if sideways else list(blocks)
+    upright = [turned_clockwise(block) for block in blocks] if sideways else list(blocks)
     original = {id(upright_block): block for upright_block, block in zip(upright, blocks, strict=True)}
-    anchors = [block for block in upright if LABEL_ANCHOR_RE.search(block.text)]
+    anchors = [block for block in upright if design.anchor_re.search(block.text)]
 
-    if is_new_design(" ".join(block.text for block in upright)):
-        label, label_direction = _left_aligned_label(upright)
-        # Across the label's own lines: on a tilted label a long line's
-        # upright box reaches up past the line above it
-        _, across = _axes(label_direction)
-
-        def reading_position(block):
-            return sum(_dot(point, across) for point in block.points) / len(block.points) * direction
-
-    else:
-        label = _centred_label(upright, anchors)
-
-        def reading_position(block):
-            return block.top if direction == 1 else -block.bottom
+    label, reading_position = design.label_lines(upright, anchors)
 
     outlet = next((block for block in label if OUTLET_RE.search(block.text)), None)
     stand = next((block for block in label if STAND_RE.search(block.text)), None)
@@ -301,81 +183,8 @@ def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlo
     # The photo needs the same quarter turn clockwise (-90) - or, when that
     # left the label upside down, a quarter turn counter-clockwise (+90)
     turn = (-90 if direction == 1 else 90) if sideways else 0
-    return [original[id(block)] for block in sorted(label, key=reading_position)], turn
-
-
-def _centred_label(upright: list[TextBlock], anchors: list[TextBlock]) -> list[TextBlock]:
-    """The old design's lines: grown outward from OUTLET/STAND to blocks
-    that are close, centred on the same axis and parallel (see
-    label_blocks_in_reading_order)."""
-    axis_x = sum(block.center_x for block in anchors) / len(anchors)
-    line_height = min(block.height for block in anchors)
-    label = list(anchors)
-    added = True
-    while added:
-        added = False
-        label_top = min(block.top for block in label)
-        label_bottom = max(block.bottom for block in label)
-        label_width = max(block.width for block in label)
-        for block in upright:
-            if block in label:
-                continue
-            gap = max(block.top - label_bottom, label_top - block.bottom, 0)
-            off_axis = abs(block.center_x - axis_x)
-            parallel = any(_parallel(block.direction, anchor.direction) for anchor in anchors)
-            if gap <= 2 * line_height and off_axis <= 0.12 * max(label_width, block.width) and parallel:
-                label.append(block)
-                added = True
-
-    return label
-
-
-def _left_aligned_label(upright: list[TextBlock]) -> tuple[list[TextBlock], float]:
-    """The new design's lines. The label's printed words mark out its
-    area: "OUTLET · VARENR." is the top line and starts at the left edge,
-    "Antal" ends the left edge at the bottom and "Stand" sits at the far
-    right of the bottom line. Every line on the label is parallel to them
-    and starts inside that area; text outside it (box print, a second
-    sticker, handwriting) does not. Measured along and across the label's
-    own lines, so a tilted label works too. Returns (blocks, the
-    direction of the label's lines)."""
-    keywords = [block for block in upright if NEW_DESIGN_KEYWORD_RE.search(block.text)]
-    direction = sorted(block.direction for block in keywords)[len(keywords) // 2]
-    along, across = _axes(direction)
-
-    def span(block, axis):
-        values = [_dot(point, axis) for point in block.points]
-        return min(values), max(values)
-
-    line_height = min(span(block, across)[1] - span(block, across)[0] for block in keywords)
-    margin = line_height / 2
-    left = min(span(block, along)[0] for block in keywords) - margin
-    right = max(span(block, along)[1] for block in keywords) + margin
-    top = min(span(block, across)[0] for block in keywords) - margin
-    bottom = max(span(block, across)[1] for block in keywords) + margin
-
-    label = []
-    for block in upright:
-        start = span(block, along)[0]
-        middle = sum(span(block, across)) / 2
-        if left <= start <= right and top <= middle <= bottom and _parallel(block.direction, direction):
-            label.append(block)
-    return label, direction
-
-
-def _turned_clockwise(block: TextBlock) -> TextBlock:
-    """The block as it sits in the photo turned a quarter turn clockwise:
-    right becomes down. Only positions relative to other blocks matter, so
-    the photo's own width isn't needed (the turned block is shifted by it)."""
-    return TextBlock(
-        block.text,
-        -block.bottom,
-        block.left,
-        -block.top,
-        block.right,
-        _folded(block.direction + 90),
-        [(-y, x) for x, y in block.corners],
-    )
+    in_order = sorted(label, key=lambda block: reading_position(block, direction))
+    return [original[id(block)] for block in in_order], turn
 
 
 def label_box(

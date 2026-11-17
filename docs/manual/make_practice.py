@@ -61,23 +61,23 @@ def shop_name(name):
     shop = ANSWERS[name]["shop"]
     if not shop:
         return None
-    candidates = RESULTS[name]["candidates"]
+    candidates = RESULTS[name].candidates
     # The exact variant if the answer key names one - several variants of
     # the same product (colours) share a URL
     if shop.get("variant"):
         for candidate in candidates:
-            if candidate.get("id") == shop["variant"]:
-                return candidate["name"]
+            if candidate.id == shop["variant"]:
+                return candidate.name
         raise LookupError(f"{name}: the right variant isn't among the suggestions")
     for candidate in candidates:
-        if f"/products/{shop['handle']}" in candidate.get("url", ""):
-            return candidate["name"]
+        if f"/products/{shop['handle']}" in candidate.url:
+            return candidate.name
     raise LookupError(f"{name}: the right product isn't among the suggestions")
 
 
 def what_to_do(name):
     answer, result = ANSWERS[name], RESULTS[name]
-    if not result["warnings"]:
+    if not result.warnings:
         return "Ingenting – den bliver <b>OK</b> af sig selv."
     reason = answer.get("reason", "")
     if reason in ("number/name conflict", "box part", "supplier number, found by name", "German label"):
@@ -107,7 +107,7 @@ def what_to_do(name):
 
 def question(name):
     result = RESULTS[name]
-    q = review_question([tuple(w) for w in result["warnings"]], result["parsed"].get("part", ""))
+    q = review_question(result.warnings, result.label.part)
     return q["title"] if q else "–"
 
 
@@ -138,7 +138,7 @@ def build_facit():
                 Paragraph(fields, G.CAPTION),
             ]
         )
-    auto = sum(1 for name in PHOTOS if not RESULTS[name]["warnings"])
+    auto = sum(1 for name in PHOTOS if not RESULTS[name].warnings)
     table = Table(
         [
             [

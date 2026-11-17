@@ -15,7 +15,7 @@ from ..pipeline import with_remembered_choice
 from ..review import review_question
 from ..shop import SHOP_WARNING_CATEGORIES, format_combined_price, look_up_product
 from ..util import debug_log
-from .theme import open_manual, resolve_tk_color, set_window_icon, shade_color
+from .theme import open_manual, set_window_icon, shade_color, theme_colors
 
 
 class ReviewWindow:
@@ -33,6 +33,8 @@ class ReviewWindow:
     """
 
     THUMBNAIL_SIZE = 72
+    # The webshop's "too many searches" message names this button (see shop._get_json)
+    SEARCH_BUTTON_TEXT = "🔍  Søg på hjemmesiden igen"
 
     def __init__(self, app, record, standalone=False):
         """standalone=True is reopen_record_review's path back into an
@@ -63,16 +65,11 @@ class ReviewWindow:
 
         # Rotation fill and canvas backdrop share this color so the border
         # added around a rotated image blends into the background instead
-        # of standing out as a bright frame. Pulled from the active ttk
-        # theme so it tracks light/dark mode instead of being hardcoded -
-        # resolved to a real hex value (see resolve_tk_color) since PIL
-        # can't parse the symbolic color names ttk themes sometimes report.
+        # of standing out as a bright frame. From the active theme, so it
+        # follows the dark or light look (see theme.theme_colors), as a real
+        # hex value PIL can use.
         style = ttk.Style(self.window)
-        theme_background = style.lookup("TFrame", "background")
-        self.canvas_background = resolve_tk_color(self.window, theme_background or "#202020")
-        self.text_color = resolve_tk_color(
-            self.window, style.lookup("TLabel", "foreground") or "#ffffff", "#ffffff"
-        )
+        self.canvas_background, self.text_color = theme_colors(self.window)
         self.card_background = shade_color(self.canvas_background, 0.08)
         self.card_border = shade_color(self.canvas_background, 0.25)
         # Disclosure toggles ("▶ Flere værktøjer") read as plain text links
@@ -301,6 +298,15 @@ class ReviewWindow:
         self.loaded_fields = {}
         self.preselected_fields = None
         self.label_name_at_choice = ""
+        # The price the program itself put in the price field (from the
+        # record, a card or a search): a search may replace that, but never
+        # a price the user typed (see _set_price)
+        self.auto_price = ""
+        # Name and price as they were before a card was picked (see select_candidate)
+        self.before_choice = {}
+        # The last search's answer (a ShopResult): its link is saved with
+        # the fields on "Godkend" - None until a search has answered
+        self.searched = None
 
         # Re-runs just the webshop lookup with whatever's currently typed
         # above - for a corrected number/name, without redoing OCR.
@@ -308,7 +314,7 @@ class ReviewWindow:
         price_actions = ttk.Frame(content)
         price_actions.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         self.price_refresh_button = ttk.Button(
-            price_actions, text="🔍  Søg på hjemmesiden igen", command=self._refresh_price
+            price_actions, text=self.SEARCH_BUTTON_TEXT, command=self._refresh_price
         )
         self.price_refresh_button.pack(anchor="w")
         # Below the button, wrapped: a failed search explains itself in a sentence or two
@@ -376,7 +382,7 @@ class ReviewWindow:
         self.content_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def _show_question(self, warnings):
-        question = review_question(warnings, (self.record or {}).get("parsed", {}).get("part", ""))
+        question = review_question(warnings, self.record.label.part if self.record is not None else "")
         if question is None:
             color = COLOR_OK
             title, detail, others, fields = (
@@ -421,7 +427,7 @@ class ReviewWindow:
             text="Klik på den vare der passer til labelen. Klik igen for at fortryde.",
             foreground=COLOR_MUTED,
         ).grid(row=1, column=0, sticky="w", pady=(0, 6))
-        is_part = bool(self.record and self.record["parsed"].get("part"))
+        is_part = bool(self.record and self.record.label.part)
         for index, candidate in enumerate(self.candidates):
             card = tk.Frame(
                 self.choices_frame,
@@ -436,7 +442,7 @@ class ReviewWindow:
             thumbnail.grid(row=0, column=0, rowspan=2, padx=8, pady=8)
             name = tk.Label(
                 card,
-                text=candidate["name"],
+                text=candidate.name,
                 font=("Segoe UI", 10, "bold"),
                 background=self.card_background,
                 foreground=self.text_color,
@@ -445,12 +451,12 @@ class ReviewWindow:
                 wraplength=260,
             )
             name.grid(row=0, column=1, sticky="sw", pady=(8, 0))
-            price = candidate["price"] or "ingen pris"
+            price = candidate.price or "ingen pris"
             if is_part:
                 price = "delvis vare – ingen pris"
-            found_by = candidate.get("found_by")
-            if candidate.get("chosen_before"):
-                times = candidate["chosen_before"]
+            found_by = candidate.found_by
+            if candidate.chosen_before:
+                times = candidate.chosen_before
                 details = price + f"   ·   valgt før ({times} {'gang' if times == 1 else 'gange'})"
             else:
                 details = price + (f"   ·   fundet via {found_by}" if found_by else "")
@@ -472,7 +478,7 @@ class ReviewWindow:
             self.candidate_cards.append({"frame": card, "thumbnail": thumbnail, "check": check})
         threading.Thread(
             target=self._fetch_thumbnails,
-            args=(self.record, [candidate.get("image", "") for candidate in self.candidates]),
+            args=(self.record, [candidate.image for candidate in self.candidates]),
             daemon=True,
         ).start()
 
@@ -512,16 +518,17 @@ class ReviewWindow:
     def select_candidate(self, index):
         """A card was clicked: fill the name and price fields from it and
         mark it chosen - or, if it was already chosen, undo that and put
-        back what the label said. Nothing is written to the record until
+        back what the fields said before. Nothing is written to the record until
         "Godkend" (see confirm) - skipping after picking leaves the record
         as it was. A part of an item (1/2 etc.) never gets a price, not even
         here: its comment field keeps the "OBS: delvis vare" note."""
         candidate = self.candidates[index]
         if candidate is self.selected_candidate:
             self.selected_candidate = None
-            for key in ("varenavn", "price"):
-                self.entries[key].delete(0, tk.END)
-                self.entries[key].insert(0, self.loaded_fields.get(key, ""))
+            self.entries["varenavn"].delete(0, tk.END)
+            self.entries["varenavn"].insert(0, self.before_choice.get("varenavn", ""))
+            self._set_price(self.before_choice.get("price", ""))
+            self.auto_price = self.before_choice.get("auto_price", "")
         else:
             # Checked before the name is replaced: the part marker may only
             # be in the label's name ("2/2 Vega ..."), never in the shop's
@@ -530,23 +537,31 @@ class ReviewWindow:
             # remembered choice is kept under (see confirm)
             if self.selected_candidate is None:
                 self.label_name_at_choice = fields["varenavn"]
+                self.before_choice = {
+                    "varenavn": fields["varenavn"],
+                    "price": fields["price"],
+                    "auto_price": self.auto_price,
+                }
             part = item_part(fields["mk_varenummer"], fields["varenavn"]) or (
-                self.record["parsed"].get("part", "") if self.record is not None else ""
+                self.record.label.part if self.record is not None else ""
             )
             self.entries["varenavn"].delete(0, tk.END)
-            self.entries["varenavn"].insert(0, candidate["name"])
-            self.entries["price"].delete(0, tk.END)
+            self.entries["varenavn"].insert(0, candidate.name)
             if part:
-                self.entries["price"].insert(0, part_note(part))
+                self._set_price(part_note(part))
             else:
-                self.entries["price"].insert(
-                    0, format_combined_price(candidate["price"], candidate["compare_price"])
-                )
+                self._set_price(format_combined_price(candidate.price, candidate.compare_price))
             self.selected_candidate = candidate
         for card, shown in zip(self.candidate_cards, self.candidates, strict=True):
             chosen = shown is self.selected_candidate
             card["frame"].configure(highlightbackground=COLOR_OK if chosen else self.card_border)
             card["check"].configure(text="✓" if chosen else "")
+
+    def _set_price(self, price):
+        """Put a price the program found in the price field (see auto_price)."""
+        self.entries["price"].delete(0, tk.END)
+        self.entries["price"].insert(0, price)
+        self.auto_price = price.strip()
 
     def toggle_tools(self):
         self.tools_visible = not self.tools_visible
@@ -604,54 +619,53 @@ class ReviewWindow:
             item_part(fields["mk_varenummer"], fields["varenavn"]),
         )
         if shop_warnings:
-            shop_result["candidates"] = with_remembered_choice(
+            shop_result.candidates = with_remembered_choice(
                 self.app.http_session,
                 self.app.price_cache,
                 self.app.price_cache_lock,
-                self.app.choices,
+                self.app.active_choices,
                 fields["mk_varenummer"],
                 fields["varenavn"],
-                shop_result["candidates"],
+                shop_result.candidates,
             )
-        self.window.after(0, self._apply_price_refresh, target_record, shop_result, shop_warnings)
+        self.window.after(0, self._apply_price_refresh, target_record, fields, shop_result, shop_warnings)
 
-    def _apply_price_refresh(self, target_record, shop_result, shop_warnings):
-        self.price_refresh_in_progress = False
-        self.price_refresh_button.configure(state="normal", text="🔄  Genindlæs pris")
-
-        # Always correct the underlying record, even if the review window
-        # has already moved on to a different item by the time this
-        # returns - see the identical concern in retry_review_in_background.
-        if shop_result["varenavn"]:
-            target_record["parsed"]["varenavn"] = shop_result["varenavn"]
-        target_record["parsed"]["price"] = format_combined_price(
-            shop_result["price"], shop_result["compare_price"]
-        )
-        part = item_part(
-            target_record["parsed"].get("mk_varenummer", ""), target_record["parsed"].get("varenavn", "")
-        )
-        part = part or target_record["parsed"].get("part", "")
-        if part:
-            target_record["parsed"]["price"] = part_note(part)
-        target_record["parsed"]["compare_price"] = shop_result["compare_price"]
-        target_record["parsed"]["url"] = shop_result["url"]
-        target_record["candidates"] = shop_result["candidates"]
-        target_record["warnings"] = [
-            w for w in target_record["warnings"] if w[0] not in SHOP_WARNING_CATEGORIES
-        ] + shop_warnings
-
+    def _apply_price_refresh(self, target_record, fields, shop_result, shop_warnings):
+        """Show a search's answer. Like picking a card, it only fills in
+        the fields: the record is written on "Godkend" (see confirm), so
+        skipping leaves it as it was - the searched number isn't in the
+        record either, and its product's name and price must not end up
+        next to the old number."""
         if self.record is not target_record:
+            return  # the user moved on meanwhile; load_record reset the button
+        self.price_refresh_in_progress = False
+        self.price_refresh_button.configure(state="normal", text=self.SEARCH_BUTTON_TEXT)
+
+        categories = {category for category, _ in shop_warnings}
+        if "shop" in categories and not shop_result.varenavn:
+            # The search itself failed (e.g. too many searches): what was
+            # typed and what was found before stays as it is
+            message = next(message for category, message in shop_warnings if category == "shop")
+            self.price_refresh_status.configure(text=message, foreground=COLOR_WARNING)
             return
 
-        for key in ("varenavn", "price"):
-            self.entries[key].delete(0, tk.END)
-            self.entries[key].insert(0, target_record["parsed"].get(key, ""))
-            # Now the record's own values - not unsaved edits
-            self.loaded_fields[key] = self.entries[key].get().strip()
-        self._show_question(target_record["warnings"])
-        self._show_candidates(target_record["candidates"])
-        categories = {category for category, _ in shop_warnings}
-        if "shop" in categories:  # the search itself failed, e.g. too many searches
+        part = item_part(fields["mk_varenummer"], fields["varenavn"]) or target_record.label.part
+        price = (
+            part_note(part) if part else format_combined_price(shop_result.price, shop_result.compare_price)
+        )
+        if shop_result.varenavn:
+            self.entries["varenavn"].delete(0, tk.END)
+            self.entries["varenavn"].insert(0, shop_result.varenavn)
+            self._set_price(price)
+        elif self.entries["price"].get().strip() == self.auto_price:
+            # No certain product: the typed name stays, and so does a price
+            # the user typed - but not the previous product's price
+            self._set_price(price)
+        self.searched = shop_result
+        label_warnings = [w for w in target_record.warnings if w[0] not in SHOP_WARNING_CATEGORIES]
+        self._show_question(label_warnings + shop_warnings)
+        self._show_candidates(shop_result.candidates)
+        if "shop" in categories:  # found, but e.g. without a price
             message = next(message for category, message in shop_warnings if category == "shop")
             self.price_refresh_status.configure(text=message, foreground=COLOR_WARNING)
         elif "by_number" in categories:
@@ -675,7 +689,7 @@ class ReviewWindow:
         self.rotation_angle = 0.0
         self.rotation_slider.set(0)
         self.rotation_label.configure(text="0°")
-        self.zoom_box = record["parsed"].get("label_box")
+        self.zoom_box = record.label_box
         self.zoomed = self.zoom_box is not None
         self._update_zoom_button()
 
@@ -684,26 +698,30 @@ class ReviewWindow:
         # (see _apply_price_refresh's identity check), but the button/status
         # itself needs to reflect *this* record's idle state regardless.
         self.price_refresh_in_progress = False
-        self.price_refresh_button.configure(state="normal", text="🔍  Søg på hjemmesiden igen")
+        self.price_refresh_button.configure(state="normal", text=self.SEARCH_BUTTON_TEXT)
         self.price_refresh_status.configure(text="")
+        self.searched = None
+        self.before_choice = {}
 
         self.raw_text_widget.configure(state="normal")
         self.raw_text_widget.delete("1.0", tk.END)
-        self.raw_text_widget.insert("1.0", record.get("raw_text", ""))
+        self.raw_text_widget.insert("1.0", record.raw_text)
         self.raw_text_widget.configure(state="disabled")
 
+        values = record.editable_fields()
         for key, entry in self.entries.items():
             entry.delete(0, tk.END)
-            entry.insert(0, record["parsed"].get(key, ""))
+            entry.insert(0, values[key])
         self.loaded_fields = self.read_fields()
+        self.auto_price = self.loaded_fields["price"]
 
-        attention = self._show_question(record["warnings"])
-        self._show_candidates(record.get("candidates", []))
+        attention = self._show_question(record.warnings)
+        self._show_candidates(record.candidates)
         # A remembered choice (see choices.py) is selected already - one
         # click on "Godkend", or another card to pick something else
         self.preselected_fields = None
         self.label_name_at_choice = ""
-        if self.candidates and self.candidates[0].get("chosen_before"):
+        if self.candidates and self.candidates[0].chosen_before:
             self.select_candidate(0)
             self.preselected_fields = self.read_fields()
 
@@ -737,12 +755,11 @@ class ReviewWindow:
         # exactly or not - so this only falls back to a text search when
         # nothing was found on the shop, and does so using the varenavn
         # (the OCR'd/human-corrected name), not the MK-varenummer.
-        parsed = self.record["parsed"]
-        url = (self.selected_candidate or {}).get("url") or parsed.get("url", "")
+        url = self.selected_candidate.url if self.selected_candidate is not None else ""
+        url = url or self.record.url
         if not url:
-            search_value = (
-                parsed.get("varenavn") or parsed.get("mk_varenummer") or parsed.get("mk_ordrenr") or ""
-            )
+            label = self.record.label
+            search_value = label.varenavn or label.mk_varenummer or label.mk_ordrenr
             url = f"{SHOP_URL}/search?q={quote(search_value)}" if search_value else SHOP_URL
         webbrowser.open(url)
 
@@ -754,7 +771,7 @@ class ReviewWindow:
 
     def _show_image(self):
         try:
-            with Image.open(self.record["path"]) as opened:
+            with Image.open(self.record.path) as opened:
                 # Phone photos (HEIC/JPEG) commonly carry an EXIF
                 # orientation tag rather than storing pixels upright -
                 # without correcting for it here, the review window can
@@ -764,10 +781,10 @@ class ReviewWindow:
                 self.original_image = corrected.convert("RGB")
             # A sideways label was read turned upright (see extract_label) -
             # show it that way, which is also what label_box refers to
-            turn = self.record["parsed"].get("photo_turn", 0)
+            turn = self.record.photo_turn
             if turn:
                 self.original_image = self.original_image.rotate(turn, expand=True)
-            self.working_image = self.record.get("working_image")
+            self.working_image = self.record.working_image
             self._resize_image()
         except Exception as error:
             self.image_canvas.delete("all")
@@ -776,7 +793,7 @@ class ReviewWindow:
                 20,
                 anchor="nw",
                 text=f"Kunne ikke vise billede:\n{error}",
-                fill="white",
+                fill=self.text_color,
             )
 
     def _resize_image(self, event=None):
@@ -827,7 +844,7 @@ class ReviewWindow:
                 20,
                 anchor="nw",
                 text=f"Kunne ikke opdatere billedvisningen:\n{error}",
-                fill="white",
+                fill=self.text_color,
             )
 
     def display_base(self):
@@ -870,9 +887,7 @@ class ReviewWindow:
                 "Tjek Antal", "Antal skal være et tal, fx 2 – eller tomt.", parent=self.window
             )
             return
-        is_part = bool(
-            item_part(fields["mk_varenummer"], fields["varenavn"]) or self.record["parsed"].get("part")
-        )
+        is_part = bool(item_part(fields["mk_varenummer"], fields["varenavn"]) or self.record.label.part)
         if (
             self.candidates
             and self.selected_candidate is None
@@ -885,20 +900,22 @@ class ReviewWindow:
             )
         ):
             return
-        self.record["parsed"].update(fields)
+        self.record.update_fields(fields)
         if self.selected_candidate is not None:
-            self.record["parsed"]["url"] = self.selected_candidate["url"]
+            self.record.url = self.selected_candidate.url
             self.app.remember_choice(
                 fields["mk_varenummer"], self.label_name_at_choice, self.selected_candidate
             )
-        self.record["candidates"] = []
-        self.record["warnings"] = []
+        elif self.searched is not None:
+            # The link of the product "Søg på hjemmesiden igen" found for these fields
+            self.record.url = self.searched.url
+            self.record.compare_price = self.searched.compare_price
+        self.record.candidates = []
+        self.record.warnings = []
         record = self.record
         self.record = None
         if self.standalone:
-            self.app.upsert_result_row(
-                record["path"], record["parsed"], record["warnings"], record.get("raw_text", "")
-            )
+            self.app.upsert_result_row(record)
             # A standalone edit doesn't go through review_finished, which
             # is what would otherwise trigger a re-export via
             # maybe_enable_export_controls - so if a file's already been
@@ -914,12 +931,12 @@ class ReviewWindow:
     def _ensure_working_image(self):
         if self.working_image is None:
             self.working_image = self.original_image.copy()
-        self.record["working_image"] = self.working_image
+        self.record.working_image = self.working_image
 
     def mirror(self):
         self._ensure_working_image()
         self.working_image = self.working_image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-        self.record["working_image"] = self.working_image
+        self.record.working_image = self.working_image
         self.pending_crop_fraction = None
         # The label area no longer matches the mirrored photo
         self.zoom_box = None
@@ -1057,9 +1074,9 @@ class ReviewWindow:
 
     def _reset_image(self):
         self.working_image = None
-        self.record.pop("working_image", None)
+        self.record.working_image = None
         self.pending_crop_fraction = None
-        self.zoom_box = self.record["parsed"].get("label_box")
+        self.zoom_box = self.record.label_box
         self.zoomed = self.zoom_box is not None
         self._update_zoom_button()
         self.rotation_angle = 0.0

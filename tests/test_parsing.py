@@ -2,8 +2,20 @@
 
 import pytest
 
-from label_miner.parsing import is_new_design, item_part, label_warnings, parse_label_fields
+from label_miner.designs import design_of
+from label_miner.parsing import item_part
 from label_miner.shop import name_tokens, token_coverage
+
+
+def parse_label_fields(text):
+    """(label, keywords_missing), parsed as the design the text is in."""
+    return design_of(text).parse(text)
+
+
+def label_warnings(text):
+    design = design_of(text)
+    return design.warnings(*design.parse(text))
+
 
 # (OCR text in reading order) -> (MK number, name, order number, STAND, part of item)
 PARSE_CASES = [
@@ -100,11 +112,11 @@ NEW_DESIGN_CASES = [
 
 @pytest.mark.parametrize(("text", "expected"), NEW_DESIGN_CASES)
 def test_parse_new_design(text, expected):
-    parsed, keywords_missing = parse_label_fields(text)
+    label, keywords_missing = parse_label_fields(text)
     fields = ("mk_varenummer", "varenavn", "mk_ordrenr", "stand", "part", "antal")
-    assert tuple(parsed[k] for k in fields) == expected
+    assert tuple(getattr(label, k) for k in fields) == expected
     assert not keywords_missing
-    assert label_warnings(parsed, keywords_missing) == []
+    assert label_warnings(text) == []
 
 
 @pytest.mark.parametrize(
@@ -116,61 +128,63 @@ def test_parse_new_design(text, expected):
         ("103291, Leonora spisebordsstol OUTLET Uden ordre nr. STAND: B", False),
     ],
 )
-def test_is_new_design(text, new):
-    assert is_new_design(text) == new
+def test_design_is_told_by_its_words(text, new):
+    assert design_of(text).name == ("new" if new else "old")
 
 
 def test_new_design_without_antal_is_reviewed():
-    parsed, keywords_missing = parse_label_fields(
-        "OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 Stand: B"
-    )
-    assert parsed["antal"] == ""
+    text = "OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 Stand: B"
+    label, keywords_missing = parse_label_fields(text)
+    assert label.antal == ""
     assert keywords_missing
-    assert ("missing", "Kunne ikke læse antallet") in label_warnings(parsed, keywords_missing)
+    assert ("missing", "Kunne ikke læse antallet") in label_warnings(text)
 
 
 @pytest.mark.parametrize("antal", ["Antal: 1O", "Antal: 2 4", "Antal: l", "Antal: 0", "Antal:"])
 def test_new_design_unclear_antal_is_not_guessed(antal):
-    parsed, keywords_missing = parse_label_fields(
-        f"OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 {antal} Stand: B"
-    )
-    assert parsed["antal"] == ""
-    assert ("missing", "Kunne ikke læse antallet") in label_warnings(parsed, keywords_missing)
+    text = f"OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 {antal} Stand: B"
+    label, _ = parse_label_fields(text)
+    assert label.antal == ""
+    assert ("missing", "Kunne ikke læse antallet") in label_warnings(text)
 
 
 def test_new_design_two_labels_in_one_photo_are_reviewed():
     # Two labels one above the other: the first label's fields read fine,
     # but the second label would silently be lost
-    parsed, keywords_missing = parse_label_fields(
+    text = (
         "OUTLET·VARENR. 102686 Como puf ORDRE NR. 141807 Antal: 1 Stand: B "
         "OUTLET·VARENR. 106854 Oris sofabord ORDRE NR. 157498 Stand: A Antal:1"
     )
+    _, keywords_missing = parse_label_fields(text)
     assert keywords_missing
-    assert "partial" in {category for category, _ in label_warnings(parsed, keywords_missing)}
+    assert "partial" in {category for category, _ in label_warnings(text)}
 
 
 def test_old_design_has_no_antal():
-    parsed, keywords_missing = parse_label_fields("103297, Holdbar spisebord OUTLET 152406 STAND:B")
-    assert "antal" not in parsed
-    assert label_warnings(parsed, keywords_missing) == []
+    text = "103297, Holdbar spisebord OUTLET 152406 STAND:B"
+    label, _ = parse_label_fields(text)
+    assert "antal" not in design_of(text).fields and label.antal == ""
+    assert label_warnings(text) == []  # so its missing Antal is no warning
 
 
 @pytest.mark.parametrize(("text", "expected"), PARSE_CASES)
 def test_parse_label_fields(text, expected):
-    parsed, _ = parse_label_fields(text)
-    assert tuple(parsed[k] for k in ("mk_varenummer", "varenavn", "mk_ordrenr", "stand", "part")) == expected
+    label, _ = parse_label_fields(text)
+    fields = ("mk_varenummer", "varenavn", "mk_ordrenr", "stand", "part")
+    assert tuple(getattr(label, k) for k in fields) == expected
 
 
 def test_missing_keywords_are_reported():
-    parsed, keywords_missing = parse_label_fields("102105 Venice sovesofa OUTLET FRA LAGER")
-    categories = {category for category, _ in label_warnings(parsed, keywords_missing)}
+    text = "102105 Venice sovesofa OUTLET FRA LAGER"
+    _, keywords_missing = parse_label_fields(text)
+    categories = {category for category, _ in label_warnings(text)}
     assert keywords_missing
     assert {"missing", "partial"} <= categories
 
 
 def test_unusual_stand_is_suspicious():
-    parsed, missing = parse_label_fields("AY H000022202, Vega sofabord OUTLET 135800 STAND: AP")
-    assert ("suspicious", 'Usædvanlig STAND på labelen: "AP"') in label_warnings(parsed, missing)
+    text = "AY H000022202, Vega sofabord OUTLET 135800 STAND: AP"
+    assert ("suspicious", 'Usædvanlig STAND på labelen: "AP"') in label_warnings(text)
 
 
 @pytest.mark.parametrize(
@@ -185,9 +199,10 @@ def test_unusual_stand_is_suspicious():
     ],
 )
 def test_unusual_order_number_is_suspicious(order_number, suspicious):
-    parsed, missing = parse_label_fields(f"103291, Leonora spisebordsstol OUTLET {order_number} STAND: B")
-    assert parsed["mk_ordrenr"] == order_number
-    assert any(category == "suspicious" for category, _ in label_warnings(parsed, missing)) == suspicious
+    text = f"103291, Leonora spisebordsstol OUTLET {order_number} STAND: B"
+    label, _ = parse_label_fields(text)
+    assert label.mk_ordrenr == order_number
+    assert any(category == "suspicious" for category, _ in label_warnings(text)) == suspicious
 
 
 @pytest.mark.parametrize(

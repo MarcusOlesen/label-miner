@@ -136,6 +136,7 @@ SECTIONS = [
     ("trin4", "Trin 4: Excel og kopiér"),
     ("trin5", "Trin 5: Sæt ind i Google Sheets"),
     ("ret", "Ret en label bagefter"),
+    ("indstillinger", "Indstillinger"),
     ("regler", "Hvornår godkender programmet selv?"),
     ("fejl", "Hvis noget går galt"),
     ("installation", "Installation og opdatering"),
@@ -148,7 +149,8 @@ def build_story(export_rows):
 
     # ---- Front page -------------------------------------------------------------
     left = [
-        Spacer(1, 10),
+        # Little room to spare: the contents list fills the page
+        Spacer(1, 2),
         p("VEJLEDNING", KICKER),
         front_title("Label Miner", demo_data.ICON),
         Spacer(1, 6),
@@ -310,6 +312,12 @@ def build_story(export_rows):
                             "Label Miner-ikonet på skrivebordet, så starter programmet med den.",
                         ),
                         (3, "<b>? Hjælp</b> åbner denne vejledning."),
+                        (
+                            4,
+                            "<b>⚙</b> åbner indstillingerne: om og hvor Excel-filen gemmes, STK, "
+                            "huskede varer og lyst eller mørkt udseende. Se siden "
+                            "<i>Indstillinger</i>.",
+                        ),
                     ],
                     W - img_w - GAP,
                 ),
@@ -620,8 +628,8 @@ def build_story(export_rows):
                     [
                         (
                             1,
-                            "<b>Excel gemt:</b> filen ligger i samme mappe som ZIP-filen og har mappens "
-                            "navn, fx <i>24-9.xlsx</i>.",
+                            "<b>Excel gemt:</b> filen ligger i samme mappe som ZIP-filen (eller i "
+                            "mappen, du har valgt under <b>⚙</b>) og har mappens navn, fx <i>24-9.xlsx</i>.",
                         ),
                         (
                             2,
@@ -633,8 +641,8 @@ def build_story(export_rows):
                 ),
                 note(
                     "Er den samme vare fotograferet flere gange, bliver den til én række. "
-                    "<b>STK</b> = antal billeder. Er <i>STK = labelens Antal</i> slået til på "
-                    "startskærmen, tæller hvert billede i stedet som labelens Antal. Valget huskes."
+                    "<b>STK</b> = antal billeder. Er <i>Brug labelens Antal som STK</i> slået til "
+                    "under <b>⚙</b> på startskærmen, tæller hvert billede i stedet som labelens Antal."
                 ),
             ],
             img_w,
@@ -730,6 +738,62 @@ def build_story(export_rows):
                         (2, "<b>Luk</b> uden at gemme (har du rettet noget, bliver du spurgt)."),
                     ],
                     W - img_w - GAP,
+                ),
+            ],
+            img_w,
+        )
+    )
+    s.append(PageBreak())
+
+    # ---- Settings ------------------------------------------------------------------------------
+    s += section(
+        TITLE["indstillinger"],
+        "indstillinger",
+        "Indstillinger",
+        "Klik på <b>⚙</b> øverst til venstre på startskærmen. Ændringerne gemmes med det samme og "
+        "huskes til næste gang.",
+    )
+    img_w = 330
+    s.append(
+        two_col(
+            framed("15_indstillinger", img_w),
+            [
+                callouts(
+                    [
+                        (
+                            1,
+                            "<b>Gem Excel-filen automatisk</b> (slået til): filen gemmes, når alle labels "
+                            "er gennemset. Slået fra gemmes ingen fil – brug <b>Kopiér resultat</b>.",
+                        ),
+                        (
+                            2,
+                            "<b>Gem i:</b> som standard ved billederne, dvs. i samme mappe som ZIP-filen. "
+                            "<b>Vælg mappe…</b> for en fast mappe, fx et fælles drev; <b>✕</b> skifter "
+                            "tilbage. Findes mappen ikke, gemmes filen ved billederne.",
+                        ),
+                        (
+                            3,
+                            "<b>Åbn Excel-filen, når den er gemt</b> (slået fra): åbner filen første gang, "
+                            "den gemmes. Luk den i Excel, før du retter en label bagefter – ellers kan "
+                            "den ikke gemmes igen.",
+                        ),
+                        (
+                            4,
+                            "<b>Brug labelens Antal som STK</b> (slået fra): hvert billede tæller som "
+                            "labelens Antal i stedet for 1 – til når der tages ét billede pr. label.",
+                        ),
+                        (
+                            5,
+                            "<b>Husk valgte varer</b> (slået til): en vare, du vælger til en label, "
+                            "foreslås først næste gang. <b>Glem alle</b> sletter de huskede valg.",
+                        ),
+                        (6, "<b>Mørkt udseende</b> (slået til): slå fra for lyst udseende."),
+                    ],
+                    W - img_w - GAP,
+                ),
+                note(
+                    "Hold musen over <b>?</b> ved en indstilling for en forklaring. Indstillingerne "
+                    "kan kun ændres på startskærmen – før billederne vælges."
                 ),
             ],
             img_w,
@@ -836,7 +900,7 @@ def build_story(export_rows):
         ],
         [
             "»Kunne ikke søge på hjemmesiden«",
-            "Ingen internetforbindelse – eller for mange søgninger på kort tid.",
+            "Ingen internetforbindelse – eller hjemmesiden afviste programmet et øjeblik.",
             "Tjek forbindelsen, vent et minut, og tryk <b>Søg på hjemmesiden igen</b>.",
         ],
         [

@@ -65,13 +65,47 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         app = app_module.LabelMinerApp(root)
         app.http_session = CachedSession(FIXTURES / "shop")
         assert app.stk_from_antal.get() is False  # STK = one per photo unless the user ticks it
-        app.stk_from_antal.set(True)
-        app._save_settings()  # what ticking the box does: remembered for the next run
+        # The defaults: save the Excel file next to the photos, don't open it,
+        # remember the products picked, dark look
+        assert (app.save_excel.get(), app.export_folder.get(), app.open_excel.get()) == (True, "", False)
+        assert app.remember_choices.get() and app.dark_appearance.get()
+        settings = app.open_settings()  # the ⚙ button on the start screen
+        assert app.open_settings() is settings  # a second click brings the same window forward
+        app.settings_rows["stk_from_antal"][1].invoke()  # switching it on: remembered for the next run
+        assert app.stk_from_antal.get() is True
+        tooltip = app.settings_tooltips["stk_from_antal"]
+        tooltip.show()  # the ? explains the setting
+        assert "Antal" in tooltip.text and tooltip.tip.winfo_exists()
+        tooltip.hide()
+        assert tooltip.tip is None
         assert load_settings()["stk_from_antal"] is True
-        app.stk_from_antal.set(False)
-        app._save_settings()
+        app.settings_rows["stk_from_antal"][1].invoke()
+        assert load_settings()["stk_from_antal"] is False
+
+        # Saving off: no folder to choose, nothing to open
+        app.settings_rows["save_excel"][1].invoke()
+        assert app.settings_rows["open_excel"][1].instate(["disabled"])
+        assert app.folder_button.instate(["disabled"])
+        app.settings_rows["save_excel"][1].invoke()
+        assert not app.settings_rows["open_excel"][1].instate(["disabled"])
+        # A folder of its own, and open the file once it is saved
+        export_folder = tmp_path / "eksport"
+        export_folder.mkdir()
+        monkeypatch.setattr(app_module.filedialog, "askdirectory", lambda **kwargs: str(export_folder))
+        app.folder_button.invoke()
+        assert load_settings()["export_folder"] == str(export_folder)
+        app.settings_rows["open_excel"][1].invoke()
+        opened = []
+        monkeypatch.setattr(app_module.os, "startfile", opened.append, raising=False)
+        # The light look and back: the icons follow
+        app.settings_rows["appearance"][1].invoke()
+        assert load_settings()["appearance"] == "light"
+        light_background = app.settings_button.cget("background")
+        app.settings_rows["appearance"][1].invoke()
+        assert app.settings_button.cget("background") != light_background
         app.ocr_engine_ready()
         app.begin_processing(sorted(batch.iterdir()))
+        assert not settings.winfo_exists()  # the batch is made with the settings as they are
         run_until(root, lambda: not app.processing and app.work_completed >= len(photos))
 
         assert app.review_window is None  # no automatic popup
@@ -85,9 +119,9 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         assert app.review_window.record is first
 
         # Double-clicking the other waiting row opens that one, not the next in line
-        second = next(r for r in app.records if r["review_pending"] and r is not first)
+        second = next(r for r in app.records if r.review_pending and r is not first)
         root.update()
-        _, y, _, height = app.results_tree.bbox(str(second["path"]))
+        _, y, _, height = app.results_tree.bbox(str(second.path))
         app.reopen_record_review(type("Event", (), {"y": y + height // 2})())
         assert app.review_window.record is second
         assert app.review_queue.queue[0] is first
@@ -99,6 +133,10 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
             window.confirm()
         run_until(root, lambda: app.exported and not app.review_bar_visible)
 
+        assert app.export_path.parent == export_folder  # the folder chosen in the settings
+        assert opened == [app.export_path]
+        app.auto_export_excel()  # saved again after an edit: not opened a second time
+        assert opened == [app.export_path]
         rows = list(load_workbook(app.export_path).active.iter_rows(values_only=True))[2:]
         by_image = {row[11]: row for row in rows}
         assert by_image["IMG_0302.HEIC"][1].startswith("Manhattan")  # the conflict, resolved

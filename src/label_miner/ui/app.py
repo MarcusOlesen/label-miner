@@ -1,6 +1,7 @@
 """The main window: loading, the batch of photos, the result list and export."""
 
 import json
+import os
 import queue
 import shutil
 import sys
@@ -8,6 +9,7 @@ import threading
 import time
 import tkinter as tk
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import asdict
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -23,6 +25,7 @@ from ..batch import (
     clean_up_old_extract_dirs,
     derive_source_folder,
     excel_rows,
+    export_directory,
     format_duration,
     load_images_from_zip,
     unique_export_path,
@@ -42,11 +45,22 @@ from ..config import (
 )
 from ..ocr import create_ocr_engine, remove_temporary_files, save_temporary_png
 from ..pipeline import extract_label
+from ..records import Record
 from ..review import warning_messages
 from ..settings import load_settings, save_settings
+from ..shop import prefetch_catalogue
 from ..util import debug_log
 from .review_window import ReviewWindow
-from .theme import accent_button_style, open_manual, set_window_icon
+from .theme import (
+    Tooltip,
+    accent_button_style,
+    apply_theme,
+    icon_glyph,
+    open_manual,
+    set_window_icon,
+    switch_style,
+    theme_colors,
+)
 
 
 class LabelMinerApp:
@@ -100,8 +114,15 @@ class LabelMinerApp:
         # Kept between runs (see settings.py and choices.py)
         self.settings = load_settings()
         self.choices = load_choices()
-        # The export's STK: one per photo, or - when ticked - the label's Antal (see batch.pieces)
+        # The settings window's switches (see settings.DEFAULTS, _save_settings)
         self.stk_from_antal = tk.BooleanVar(value=self.settings["stk_from_antal"])
+        self.save_excel = tk.BooleanVar(value=self.settings["save_excel"])
+        self.export_folder = tk.StringVar(value=self.settings["export_folder"])
+        self.open_excel = tk.BooleanVar(value=self.settings["open_excel"])
+        self.remember_choices = tk.BooleanVar(value=self.settings["remember_choices"])
+        self.dark_appearance = tk.BooleanVar(value=self.settings["appearance"] == "dark")
+        # The plain Tk icons, recoloured when the look changes (see _icon)
+        self.icons = []
 
         # The window shows one of three "screens" at a time: a boot screen
         # while the OCR models load, a select screen with one big button,
@@ -180,19 +201,22 @@ class LabelMinerApp:
             foreground=COLOR_MUTED,
         ).pack(pady=(4, 24))
 
-        big_style = "Big." + accent_button_style()
-        style = ttk.Style(self.root)
-        style.configure(big_style, font=(DEFAULT_FONT_FAMILY, 14, "bold"), padding=(28, 18))
+        self._configure_styles()
         self.select_button = ttk.Button(
             center,
             text="📂  Vælg billeder eller ZIP",
             command=self._select_images,
-            style=big_style,
+            style="Big." + accent_button_style(),
         )
         self.select_button.pack()
         ttk.Button(self.select_frame, text="?  Hjælp", command=lambda: open_manual(self.root)).place(
             relx=1.0, rely=0.0, anchor="ne"
         )
+        # The settings, chosen before a batch starts: only on this screen, as
+        # the export is made from them (see open_settings)
+        self.settings_button = self._settings_icon(self.select_frame)
+        self.settings_button.place(relx=0.0, rely=0.0, anchor="nw")
+        self.settings_window = None
 
         drop_targets = [self.select_frame, center, self.select_button]
         if DND_FILES is not None:
@@ -218,28 +242,245 @@ class LabelMinerApp:
                 justify="center",
             ).pack(pady=(12, 0))
 
-        # A setting for the batch, chosen before it starts: off, each photo is one piece
-        ttk.Checkbutton(
-            center,
-            text="STK = labelens Antal (ét billede pr. label)",
-            variable=self.stk_from_antal,
-            command=self._save_settings,
-        ).pack(pady=(24, 0))
-        ttk.Label(
-            center,
-            text="Slået fra: hvert billede tæller som 1 stk.",
+    # What the settings do, behind the ? next to them
+    HELP = {
+        "stk_from_antal": (
+            "De nye labels har feltet Antal: hvor mange stk. labelen gælder for.\n\n"
+            "Slået til: hvert billede tæller som labelens Antal. Et billede af en label med "
+            "»Antal: 4« giver STK 4 – tag ét billede pr. label.\n\n"
+            "Slået fra: hvert billede tæller som 1 stk. – tag ét billede pr. vare.\n\n"
+            "Labels uden Antal (det gamle design) tæller altid som 1."
+        ),
+        "save_excel": (
+            "Når alle labels er gennemgået, gemmes resultatet som en Excel-fil, og filen gemmes "
+            "igen, hver gang du retter en label bagefter.\n\n"
+            "Slået fra: der gemmes ingen fil. Brug »Kopiér resultat«, og sæt rækkerne ind i "
+            "Google Sheets."
+        ),
+        "remember_choices": (
+            "Når du vælger en vare fra hjemmesiden til en label, husker programmet valget. Næste "
+            "gang en label med samme nummer og navn skal gennemgås, står varen øverst og er valgt "
+            "på forhånd – du godkender stadig selv.\n\n"
+            "Slået fra: intet huskes, og intet foreslås ud fra tidligere valg."
+        ),
+    }
+
+    def _icon(self, parent, fluent_code, fallback, size, command=None):
+        """A clickable Windows icon with no button around it, lighting up
+        under the mouse (see theme.icon_glyph)."""
+        text, font = icon_glyph(self.root, fluent_code, fallback, size)
+        icon = tk.Label(
+            parent,
+            text=text,
+            font=font,
+            background=theme_colors(self.root)[0],
             foreground=COLOR_MUTED,
-        ).pack()
+            cursor="hand2",
+            padx=4,
+            pady=2,
+        )
+        if command is not None:
+            icon.bind("<Button-1>", lambda event: command(), add="+")
+        icon.bind("<Enter>", lambda event: icon.configure(foreground=theme_colors(icon)[1]), add="+")
+        icon.bind("<Leave>", lambda event: icon.configure(foreground=COLOR_MUTED), add="+")
+        self.icons.append(icon)
+        return icon
+
+    def _settings_icon(self, parent):
+        """The ⚙ that opens the settings: Windows' own settings icon."""
+        return self._icon(parent, "\ue713", "⚙", 15, command=self.open_settings)
+
+    def open_settings(self):
+        """The ⚙ button: a small window with the settings, each saved as
+        soon as it is changed (see settings.py). Returns the window."""
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            self.settings_window.deiconify()
+            self.settings_window.lift()
+            return self.settings_window
+        window = tk.Toplevel(self.root)
+        window.title("Indstillinger")
+        window.resizable(False, False)
+        window.transient(self.root)
+        set_window_icon(window)
+        frame = ttk.Frame(window, padding=(22, 18, 22, 18))
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(2, weight=1, minsize=40)
+        ttk.Label(frame, text="Indstillinger", font=(DEFAULT_FONT_FAMILY, 14, "bold")).grid(
+            row=0, column=0, columnspan=4, sticky="w"
+        )
+        self.settings_rows = {}
+        self.settings_tooltips = {}
+        rows = iter(range(1, 100))
+
+        def section(title):
+            ttk.Label(
+                frame, text=title.upper(), font=(DEFAULT_FONT_FAMILY, 9, "bold"), foreground=COLOR_MUTED
+            ).grid(row=next(rows), column=0, columnspan=4, sticky="w", pady=(18, 2))
+
+        def setting(key, text, variable):
+            """One setting: its name, a ? with what it does (see HELP), and a
+            switch. Clicking the name works like clicking the switch."""
+            row = next(rows)
+            name = ttk.Label(frame, text=text, cursor="hand2")
+            name.grid(row=row, column=0, sticky="w", pady=5)
+            if key in self.HELP:
+                help_icon = self._icon(frame, "\ue9ce", "?", 11)
+                help_icon.grid(row=row, column=1, sticky="w", padx=(2, 0), pady=5)
+                self.settings_tooltips[key] = Tooltip(help_icon, self.HELP[key])
+            switch = ttk.Checkbutton(
+                frame, variable=variable, command=self._settings_changed, style=switch_style()
+            )
+            switch.grid(row=row, column=3, sticky="e", pady=5)
+
+            def toggle(event):
+                if not switch.instate(["disabled"]):
+                    variable.set(not variable.get())
+                    self._settings_changed()
+
+            name.bind("<Button-1>", toggle)
+            self.settings_rows[key] = (name, switch)
+
+        section("Eksport")
+        setting("save_excel", "Gem Excel-filen automatisk", self.save_excel)
+        row = next(rows)
+        folder_label = ttk.Label(frame, text="Gem i")
+        folder_label.grid(row=row, column=0, sticky="w", padx=(18, 0), pady=5)
+        folder_buttons = ttk.Frame(frame)
+        folder_buttons.grid(row=row, column=1, columnspan=3, sticky="e", pady=5)
+        self.folder_text = ttk.Label(folder_buttons, foreground=COLOR_MUTED)
+        self.folder_text.pack(side="left", padx=(12, 8))
+        self.folder_reset = self._icon(folder_buttons, "\ue711", "×", 10, command=self._reset_export_folder)
+        self.folder_reset.pack(side="left", padx=(0, 6))
+        Tooltip(self.folder_reset, "Gem ved billederne igen")
+        self.folder_button = ttk.Button(
+            folder_buttons, text="Vælg mappe…", command=self._choose_export_folder
+        )
+        self.folder_button.pack(side="left")
+        self.settings_rows["export_folder"] = (folder_label, self.folder_button)
+        setting("open_excel", "Åbn Excel-filen, når den er gemt", self.open_excel)
+        setting("stk_from_antal", "Brug labelens Antal som STK", self.stk_from_antal)
+
+        section("Gennemgang")
+        setting("remember_choices", "Husk valgte varer", self.remember_choices)
+        row = next(rows)
+        self.choices_count = ttk.Label(frame, foreground=COLOR_MUTED)
+        self.choices_count.grid(row=row, column=0, columnspan=3, sticky="w", padx=(18, 0), pady=5)
+        self.forget_button = ttk.Button(frame, text="Glem alle", command=self._forget_choices)
+        self.forget_button.grid(row=row, column=3, sticky="e", pady=5)
+
+        section("Udseende")
+        setting("appearance", "Mørkt udseende", self.dark_appearance)
+
+        ttk.Separator(frame).grid(row=next(rows), column=0, columnspan=4, sticky="ew", pady=(16, 14))
+        ttk.Button(frame, text="Luk", command=window.destroy).grid(row=next(rows), column=3, sticky="e")
+        self._update_settings_window()
+        window.update_idletasks()
+        # Next to the ⚙ it was opened from
+        x = self.root.winfo_rootx() + 40
+        y = self.root.winfo_rooty() + 40
+        window.geometry(f"+{x}+{y}")
+        self.settings_window = window
+        return window
+
+    def _update_settings_window(self):
+        """Show the settings window's details as the settings are now: the
+        chosen folder, how many products are remembered, and which rows
+        don't apply (no folder or opening without saving)."""
+        folder = self.settings["export_folder"]
+        if folder:
+            shown = folder if len(folder) <= 34 else "…" + folder[-33:]
+            self.folder_text.configure(text=shown)
+            self.folder_reset.pack(side="left", padx=(0, 6), before=self.folder_button)
+        else:
+            self.folder_text.configure(text="Ved billederne")
+            self.folder_reset.pack_forget()
+        saving = self.settings["save_excel"]
+        for key in ("export_folder", "open_excel"):
+            name, control = self.settings_rows[key]
+            name.configure(foreground="" if saving else COLOR_MUTED)
+            control.state(["!disabled"] if saving else ["disabled"])
+        count = len(self.choices)
+        self.choices_count.configure(
+            text=f"{count} {'vare' if count == 1 else 'varer'} husket" if count else "Ingen varer husket"
+        )
+        self.forget_button.state(["!disabled"] if count else ["disabled"])
+
+    def _settings_changed(self):
+        """A setting was changed in the settings window: save it, and show
+        the new look right away."""
+        dark = self.dark_appearance.get()
+        appearance_changed = dark != (self.settings["appearance"] == "dark")
+        self._save_settings()
+        if appearance_changed:
+            self._apply_appearance()
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            self._update_settings_window()
+
+    def _apply_appearance(self):
+        """Switch between the dark and the light look. ttk widgets follow
+        the theme by themselves; the plain Tk icons are recoloured here. The
+        review window picks its colours up when it opens."""
+        apply_theme(self.root, self.settings["appearance"])
+        self._configure_styles()
+        self.icons = [icon for icon in self.icons if icon.winfo_exists()]
+        background = theme_colors(self.root)[0]
+        for icon in self.icons:
+            icon.configure(background=background)
+
+    def _configure_styles(self):
+        """The app's own styles - kept per theme by ttk, so set again after
+        the theme changes."""
+        ttk.Style(self.root).configure(
+            "Big." + accent_button_style(), font=(DEFAULT_FONT_FAMILY, 14, "bold"), padding=(28, 18)
+        )
+
+    def _choose_export_folder(self):
+        folder = filedialog.askdirectory(
+            parent=self.settings_window, title="Gem Excel-filen i", mustexist=True
+        )
+        if folder:
+            self.export_folder.set(str(Path(folder)))
+            self._settings_changed()
+
+    def _reset_export_folder(self):
+        self.export_folder.set("")
+        self._settings_changed()
+
+    def _forget_choices(self):
+        count = len(self.choices)
+        if count and messagebox.askyesno(
+            "Glem husket valg?",
+            f"Programmet har husket {count} {'vare' if count == 1 else 'varer'} til labels. "
+            "Vil du glemme dem alle? Det kan ikke fortrydes.",
+            parent=self.settings_window,
+        ):
+            self.choices.clear()
+            save_choices(self.choices)
+            self._update_settings_window()
+
+    @property
+    def active_choices(self):
+        """The remembered choices to suggest from - none while "Husk valgte
+        varer" is off. Read by the worker threads, so from the settings dict,
+        not a Tk variable."""
+        return self.choices if self.settings["remember_choices"] else None
 
     def remember_choice(self, mk_varenummer, varenavn, candidate):
         """The user approved a label with this webshop product picked: offer
-        it first next time (see choices.py). Runs on the main thread; the
-        workers only read the dict."""
+        it first next time (see choices.py) - unless "Husk valgte varer" is
+        off. Runs on the main thread; the workers only read the dict."""
+        if not self.settings["remember_choices"]:
+            return
         if remember_choice(self.choices, mk_varenummer, varenavn, candidate):
             save_choices(self.choices)
 
     def _save_settings(self):
         self.settings["stk_from_antal"] = self.stk_from_antal.get()
+        self.settings["save_excel"] = self.save_excel.get()
+        self.settings["export_folder"] = self.export_folder.get()
+        self.settings["open_excel"] = self.open_excel.get()
+        self.settings["remember_choices"] = self.remember_choices.get()
+        self.settings["appearance"] = "dark" if self.dark_appearance.get() else "light"
         save_settings(self.settings)
 
     def _build_work_screen(self):
@@ -456,6 +697,9 @@ class LabelMinerApp:
         self.selected_count.set(f"Valgte billeder: {len(self.files)}")
         # The select screen is consumed for good here - this app processes
         # one batch per launch, so the button never needs to come back.
+        # Nor do the settings: the batch is made with them as they are now.
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            self.settings_window.destroy()
         self.select_frame.pack_forget()
         self.work_frame.pack(fill="both", expand=True)
         self._start_processing()
@@ -475,7 +719,24 @@ class LabelMinerApp:
         self.work_durations = []
         self._update_progress_info()
         self._start_busy_indicator()
+        # The webshop's catalogue is downloaded alongside the first photos'
+        # OCR - its own thread, which gets there first and says how it goes
+        threading.Thread(target=self._prefetch_catalogue, daemon=True).start()
         threading.Thread(target=self._process_in_background, daemon=True).start()
+
+    def _prefetch_catalogue(self):
+        """Background thread: download the webshop's products (see
+        shop.prefetch_catalogue), showing in the status line how it goes -
+        a busy shop can take a minute, and the window must not look frozen
+        meanwhile."""
+
+        def report(text):
+            self.root.after(0, self.status.set, text)
+
+        if prefetch_catalogue(self.http_session, self.price_cache, self.price_cache_lock, report):
+            report("Hjemmesidens varer er hentet.")
+        else:
+            report("Kunne ikke hente hjemmesidens varer – labels uden pris kommer til gennemgang.")
 
     def _extract_one(self, path):
         """Runs on a worker thread (see _process_in_background). Exceptions
@@ -483,21 +744,29 @@ class LabelMinerApp:
         can't stop the rest of the batch."""
         started_at = time.perf_counter()
         try:
-            raw_text, parsed_label, warnings, candidates = extract_label(
+            record = extract_label(
                 self.ocr_engine,
                 path,
                 self.http_session,
                 self.price_cache,
                 self.price_cache_lock,
-                self.choices,
+                self.active_choices,
             )
         except Exception as error:
-            raw_text = ""
-            parsed_label = {}
-            warnings = [("error", f"Behandling af billedet fejlede: {error}")]
-            candidates = []
+            record = Record(path, warnings=[("error", f"Behandling af billedet fejlede: {error}")])
         duration = time.perf_counter() - started_at
-        return raw_text, parsed_label, warnings, candidates, duration
+        return record, duration
+
+    @staticmethod
+    def _debug_log_record(record, title):
+        debug_log(f"\n===== {title} =====")
+        debug_log("RAW TEXT")
+        debug_log(record.raw_text or "<empty>")
+        debug_log("PARSED LABEL")
+        fields = {**asdict(record.label), "price": record.price, "url": record.url}
+        debug_log(json.dumps(fields, indent=2, ensure_ascii=False))
+        for warning in warning_messages(record.warnings):
+            debug_log(f"Advarsel: {warning}")
 
     def _process_in_background(self):
         """Runs up to OCR_WORKERS images through _extract_one at once
@@ -520,52 +789,30 @@ class LabelMinerApp:
                 }
                 for future in as_completed(futures):
                     position, path = futures[future]
-                    raw_text, parsed_label, warnings, candidates, duration = future.result()
+                    record, duration = future.result()
                     completed_count += 1
-                    debug_log(f"\n===== {path.name} =====")
-                    debug_log("RAW TEXT")
-                    debug_log(raw_text or "<empty>")
-                    debug_log("PARSED LABEL")
-                    debug_log(json.dumps(parsed_label, indent=2, ensure_ascii=False))
-                    for warning in warning_messages(warnings):
-                        debug_log(f"Advarsel: {warning}")
-                    record = {
-                        "path": path,
-                        "raw_text": raw_text,
-                        "parsed": parsed_label,
-                        "warnings": warnings,
-                        "candidates": candidates,
-                        # True while a record is sitting in review_queue
-                        # waiting for (or actively going through) the live
-                        # review popup - reopen_record_review refuses to
-                        # open a standalone editor for one of these, so a
-                        # row can't be resolved twice (once through each
-                        # window) and double-count review_completed.
-                        "review_pending": bool(warnings),
-                    }
+                    self._debug_log_record(record, path.name)
+                    # True while a record is sitting in review_queue
+                    # waiting for (or actively going through) the live
+                    # review popup - reopen_record_review refuses to
+                    # open a standalone editor for one of these, so a
+                    # row can't be resolved twice (once through each
+                    # window) and double-count review_completed.
+                    record.review_pending = bool(record.warnings)
                     self.records[position] = record
-                    if warnings:
+                    if record.warnings:
                         self.review_total += 1
                         self.review_queue.put(record)
-                    self.root.after(
-                        0,
-                        self._show_result,
-                        path,
-                        raw_text,
-                        parsed_label,
-                        warnings,
-                        completed_count,
-                        duration,
-                    )
+                    self.root.after(0, self._show_result, record, completed_count, duration)
         except Exception as error:
             self.root.after(0, self._processing_failed, error)
         else:
             self.root.after(0, self._processing_finished)
 
-    def _show_result(self, path, raw_text, parsed_label, warnings, index, duration):
+    def _show_result(self, record, index, duration):
         if index == 1:
             self._stop_busy_indicator()
-        self.upsert_result_row(path, parsed_label, warnings, raw_text)
+        self.upsert_result_row(record)
         self._complete_work_unit(duration)
         self.status.set(f"Behandlet {index} af {len(self.files)} billeder.")
 
@@ -578,27 +825,26 @@ class LabelMinerApp:
         return "Gennemse", "warning"
 
     @staticmethod
-    def _summary_for_record(parsed_label, raw_text):
-        varenavn = parsed_label.get("varenavn", "")
-        mk_varenummer = parsed_label.get("mk_varenummer", "")
-        stand = parsed_label.get("stand", "")
-        parts = [value for value in (varenavn, mk_varenummer, f"Stand {stand}" if stand else "") if value]
+    def _summary_for_record(record):
+        label = record.label
+        stand = f"Stand {label.stand}" if label.stand else ""
+        parts = [value for value in (label.varenavn, label.mk_varenummer, stand) if value]
         if parts:
             return " · ".join(parts)
-        text = (raw_text or "").strip()
+        text = record.raw_text.strip()
         if text:
             return (text[:80] + "…") if len(text) > 80 else text
         return "Ingen tekst genkendt"
 
-    def upsert_result_row(self, path, parsed_label, warnings, raw_text):
+    def upsert_result_row(self, record):
         """Add (or, on a retry, update in place) this image's row in the
         result list - filename, a status tag driving its color, and a short
         human-readable summary. The full raw OCR text/JSON never appears
         here; it's only shown in the review window or via --debug."""
-        status_text, tag = self._status_for_warnings(warnings)
-        summary = self._summary_for_record(parsed_label, raw_text)
-        iid = str(path)
-        values = (path.name, status_text, summary)
+        status_text, tag = self._status_for_warnings(record.warnings)
+        summary = self._summary_for_record(record)
+        iid = str(record.path)
+        values = (record.path.name, status_text, summary)
         # No .see() - the list must not scroll away from whatever row is
         # being read while new results come in
         if self.results_tree.exists(iid):
@@ -781,7 +1027,7 @@ class LabelMinerApp:
         already-processed row, so a mistake spotted after the fact (or
         just after the whole batch is done) doesn't require re-running
         anything. Refuses to open one for a record still sitting in
-        review_queue (record["review_pending"]) - that one is already
+        review_queue (record.review_pending) - that one is already
         going through the live review popup, and opening a second editor
         for the same record could let both resolve it and double-count
         review_completed."""
@@ -789,12 +1035,12 @@ class LabelMinerApp:
         if not row_id:
             return
         record = next(
-            (r for r in self.records if r is not None and str(r["path"]) == row_id),
+            (r for r in self.records if r is not None and str(r.path) == row_id),
             None,
         )
         if record is None:
             return
-        if record.get("review_pending"):
+        if record.review_pending:
             # Still waiting in the batch review - open it there instead of
             # a second editor on the same record
             self._open_review_for(record)
@@ -821,16 +1067,11 @@ class LabelMinerApp:
         self.open_standalone_windows[id(record)] = ReviewWindow(self, record, standalone=True)
 
     def review_finished(self, record, updated_record):
-        record["review_pending"] = False
+        record.review_pending = False
         if updated_record is not None:
             debug_log("REVIEWED LABEL")
-            debug_log(json.dumps(updated_record["parsed"], indent=2, ensure_ascii=False))
-            self.upsert_result_row(
-                updated_record["path"],
-                updated_record["parsed"],
-                updated_record["warnings"],
-                updated_record.get("raw_text", ""),
-            )
+            debug_log(json.dumps(updated_record.editable_fields(), indent=2, ensure_ascii=False))
+            self.upsert_result_row(updated_record)
         self.review_completed += 1
         self.status.set(f"Gennemgang fuldført: {self.review_completed} af {self.review_total}.")
         self._maybe_enable_export_controls()
@@ -850,12 +1091,21 @@ class LabelMinerApp:
         """Save the spreadsheet as soon as nothing is left to review - no
         dialog, no button - and again whenever a row changes afterwards
         (see reopen_record_review), so the saved file never goes out of date.
+        Not at all while "Gem Excel-filen automatisk" is off: then the result
+        is only copied (see _copy_result).
 
         The file name is picked once (unique_export_path never overwrites an
         existing file) and then reused, so later saves update the same file
-        instead of creating "24-9 (1).xlsx", "24-9 (2).xlsx", ..."""
+        instead of creating "24-9 (1).xlsx", "24-9 (2).xlsx", ... It is
+        saved in the folder chosen in the settings, or next to the ZIP file
+        or the photos (see batch.export_directory)."""
         if not self.records:
             return
+        if not self.settings["save_excel"]:
+            self.status.set("Færdig. Kopiér resultatet, og sæt det ind i Google Sheets.")
+            self.export_ready_label.configure(text="✅ Færdig — klar til at kopiere", foreground=COLOR_OK)
+            return
+        note = ""
         try:
             from openpyxl import Workbook
 
@@ -868,15 +1118,36 @@ class LabelMinerApp:
             for row in rows[1:]:
                 worksheet.append(row)
             if self.export_path is None:
-                self.export_path = unique_export_path(self.export_dir, self.source_folder_name)
+                chosen = self.settings["export_folder"]
+                folder = export_directory(self.export_dir, chosen)
+                if chosen and folder != Path(chosen):
+                    note = f" (mappen {chosen} findes ikke, så den er gemt ved billederne)"
+                self.export_path = unique_export_path(folder, self.source_folder_name)
             workbook.save(self.export_path)
+        except PermissionError:
+            # Most often the file is open in Excel, which locks it
+            self.export_ready_label.configure(text="⚠ Excel-filen er ikke opdateret", foreground=COLOR_ERROR)
+            messagebox.showerror(
+                "Excel-filen kunne ikke gemmes",
+                f"{self.export_path.name} er åben i et andet program, fx Excel. Luk den, og ret "
+                "labelen igen – så gemmes filen.",
+                parent=self.root,
+            )
+            return
         except Exception as error:
             self.export_ready_label.configure(text="⚠ Excel-eksport fejlede", foreground=COLOR_ERROR)
             messagebox.showerror("Excel eksport fejlede", str(error), parent=self.root)
             return
+        first_save = not self.exported
         self.exported = True
-        self.status.set(f"Færdig. Excel gemt: {self.export_path.name}")
+        self.status.set(f"Færdig. Excel gemt: {self.export_path.name}{note}")
         self.export_ready_label.configure(text=f"✅ Excel gemt: {self.export_path.name}", foreground=COLOR_OK)
+        if first_save and self.settings["open_excel"]:
+            # Only the first time: a later save after an edit would reopen it
+            try:
+                os.startfile(self.export_path)
+            except OSError as error:
+                debug_log(f"Could not open {self.export_path}: {error}")
 
     def _copy_result(self):
         rows = excel_rows(self.records, self.source_folder_name, self.stk_from_antal.get())
@@ -921,36 +1192,23 @@ class LabelMinerApp:
         started_at = time.perf_counter()
         try:
             image_path = save_temporary_png(working_image, temporary_paths)
-            raw_text, parsed_label, warnings, candidates = extract_label(
+            reading = extract_label(
                 self.ocr_engine,
                 image_path,
                 self.http_session,
                 self.price_cache,
                 self.price_cache_lock,
-                self.choices,
+                self.active_choices,
             )
-            record.update(
-                raw_text=raw_text,
-                parsed=parsed_label,
-                warnings=warnings,
-                candidates=candidates,
-                working_image=working_image,
-            )
-            debug_log(f"\n===== {record['path'].name} RETRY =====")
-            debug_log("RAW TEXT")
-            debug_log(raw_text or "<empty>")
-            debug_log("PARSED LABEL")
-            debug_log(json.dumps(parsed_label, indent=2, ensure_ascii=False))
-            for warning in warning_messages(warnings):
-                debug_log(f"Advarsel: {warning}")
-            duration = time.perf_counter() - started_at
-            self.root.after(0, self._show_retry_result, record, warnings, duration)
-            self.root.after(0, self._retry_finished, record, warnings)
+            record.take_reading(reading)
+            record.working_image = working_image
+            self._debug_log_record(record, f"{record.path.name} RETRY")
         except Exception as error:
-            record["warnings"] = [("error", f"Genlæsning fejlede: {error}")]
-            duration = time.perf_counter() - started_at
-            self.root.after(0, self._show_retry_result, record, record["warnings"], duration)
-            self.root.after(0, self._retry_finished, record, record["warnings"])
+            record.warnings = [("error", f"Genlæsning fejlede: {error}")]
+        duration = time.perf_counter() - started_at
+        try:
+            self.root.after(0, self._show_retry_result, record, duration)
+            self.root.after(0, self._retry_finished, record, record.warnings)
         finally:
             remove_temporary_files(temporary_paths)
 
@@ -963,16 +1221,16 @@ class LabelMinerApp:
         reopen_record_review's review_pending guard), so a fresh set of
         warnings here counts as newly pending rather than assuming it was
         already counted."""
-        was_pending = record.get("review_pending", False)
+        was_pending = record.review_pending
         if warnings:
-            record["review_pending"] = True
+            record.review_pending = True
             if not was_pending:
                 self.review_total += 1
             self.review_queue.put(record)
             self.status.set("Genlæsning kræver stadig gennemgang.")
         else:
             if was_pending:
-                record["review_pending"] = False
+                record.review_pending = False
                 self.review_completed += 1
             self.status.set("Genlæsning lykkedes.")
         # Safe no-op if this retry didn't come from a standalone editor
@@ -982,6 +1240,6 @@ class LabelMinerApp:
         self.open_standalone_windows.pop(id(record), None)
         self._maybe_enable_export_controls()
 
-    def _show_retry_result(self, record, warnings, duration):
-        self.upsert_result_row(record["path"], record["parsed"], warnings, record.get("raw_text", ""))
+    def _show_retry_result(self, record, duration):
+        self.upsert_result_row(record)
         self._complete_work_unit(duration)

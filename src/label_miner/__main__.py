@@ -6,6 +6,7 @@ desktop icon) are processed as soon as the OCR models have loaded.
 
 import tkinter as tk
 
+from .settings import load_settings
 from .ui.app import LabelMinerApp
 from .ui.theme import apply_theme, install_error_reporting
 
@@ -18,7 +19,7 @@ except ImportError:  # optional: drag and drop
 def main() -> None:
     root = TkinterDnD.Tk() if TkinterDnD is not None else tk.Tk()
     install_error_reporting(root)
-    theme_applied = apply_theme(root)
+    theme_applied = apply_theme(root, load_settings()["appearance"])
     app = LabelMinerApp(root, theme_applied=theme_applied)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()

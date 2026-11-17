@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.5 - 2026-11-17
+- The webshop no longer blocks a batch. The shop's search allows a short burst and then about one
+  search a minute, and each label used several, so 15-40 labels could be refused all at once.
+  Instead, the shop's whole catalogue is now downloaded once per batch from Shopify's public
+  product list (three requests for about 730 products, a few seconds) and every label is matched
+  against it on the PC. The matching rules are the same: on the test photos with the same recorded
+  products, every field, price, link, warning and suggestion is identical. The catalogue is
+  downloaded again when it is an hour old, so a batch reviewed later gets today's prices; a failed
+  download is tried again after a minute, not for every label.
+- The product list refuses requests that come too fast as well, so its pages are fetched two
+  seconds apart, and when the shop is busy the download waits (5, 15, then 30 seconds) and asks
+  again before giving up. The status line says what is happening meanwhile ("Hjemmesiden har
+  travlt – prøver igen om 15 sekunder…"), so the window doesn't look frozen.
+- Supplier codes the shop's search didn't find are found when they are a variant's SKU (with
+  today's catalogue: the Cholet bedside table, "AY 0000108453").
+- The setting "STK = labelens Antal" moved from the start screen to a settings window, opened with
+  the ⚙ icon in the top left corner, and is now called "Brug labelens Antal som STK": a switch, with
+  a ? next to it that explains the setting when the mouse rests on it.
+- More settings in the same window, grouped as Eksport, Gennemgang and Udseende, each remembered
+  between runs:
+  - "Gem Excel-filen automatisk" (on): off saves no file; the result is copied instead.
+  - "Gem i": next to the photos as before, or a folder of your own ("Vælg mappe…"). A chosen
+    folder that is gone (a USB stick, a network drive) means the file is saved next to the photos.
+  - "Åbn Excel-filen, når den er gemt" (off): opens the file the first time it is saved. A file
+    that can't be saved again because it is open in Excel now says so.
+  - "Husk valgte varer" (on): off remembers nothing and suggests nothing from earlier picks. "Glem
+    alle" forgets every remembered product.
+  - "Mørkt udseende" (on): off switches to a light look, straight away. The review window follows
+    it too.
+- The manual has a page about the settings.
+
+## 2.4 - 2026-11-15
+- "Søg på hjemmesiden igen" in the review window only fills in the fields, like picking a product
+  card: nothing is saved to the label until "Godkend". Before, a search wrote the found product's
+  name and price into the label straight away, so skipping after correcting the number left the
+  old number next to the new product's price in the export.
+- A search keeps what was typed: a corrected name stays when no product is certain, and a price
+  typed by hand is never replaced. A search that fails (no connection, too many searches) changes
+  nothing. The button keeps its name, "Søg på hjemmesiden igen", which the error message refers to.
+- Internally, a photo's label, the webshop's products and the lookup's answer are typed records
+  (`records.py`), and each label design is one class (`designs.py`) that recognises its own text,
+  finds its lines and reads its fields - so another design can be added in one place. The
+  program reads every test photo exactly as before.
+
 ## 2.3 - 2026-11-10
 - The new label design (left-aligned, "OUTLET · VARENR.", "ORDRE NR.", "Antal" and "Stand") is read.
   Both designs are supported side by side: each photo's design is told by the words on the label

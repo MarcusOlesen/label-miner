@@ -17,7 +17,7 @@ flowchart LR
     A["Photos<br/>(zip from Google Drive)"] --> B["OCR<br/>RapidOCR"]
     B --> C["Keep the label's own text<br/>anchored on its printed words,<br/>in reading order"]
     C --> D["Parse the fields<br/>number, name,<br/>order no., STAND, Antal"]
-    D --> E["Find the product<br/>webshop search by number,<br/>checked against the name"]
+    D --> E["Find the product<br/>in the webshop's catalogue:<br/>by number, checked against the name"]
     E -->|certain| F["Approved"]
     E -->|not certain| G["Review window<br/>one plain question"]
     G --> F
@@ -47,22 +47,24 @@ OUTLET
 STAND: B
 ```
 
-- **Reading (`ocr.py`).** Each photo is OCR'd once. Photos contain much more than the label
+- **Reading (`ocr.py`, `designs.py`).** Each photo is OCR'd once. Photos contain much more than the label
   (shipping labels, box print, other stickers), so only the label's own lines are kept. The design
   is told by its words: **VARENR.** or **ORDRE NR.** mean the new one. On a new label the words
   VARENR., ORDRE NR., Antal and Stand mark out its area, and only parallel lines starting inside
   it are kept; on an old label, the lines centred around **OUTLET** and **STAND**. The lines are
   then ordered by their position on the label. Sideways labels are detected from the same geometry
   and read a second time, turned upright.
-- **Parsing (`parsing.py`).** A new label's fields are read after their own words, and
+- **Parsing (`designs.py`, `parsing.py`).** A new label's fields are read after their own words, and
   **Antal** is read; STK is one per photo, or - a setting on the start screen, off by
   default - each photo's Antal.
   This handles the number formats found on real labels: MK numbers, parts of an item
   (`101338_1/2`) and supplier codes (`UE 45990201`, `VN 19987-330`). It also undoes the OCR
   slips that are safe to undo.
-- **Matching (`shop.py`).** A price is only filled in when it is certain: the product found via the
-  label's number, its variant (colour, size) being the one whose SKU is that number, and every word
-  of the label's name in that variant's name. A name-only match, or a number and name that point to
+- **Matching (`shop.py`).** The webshop's whole catalogue is downloaded once per batch (three
+  requests, from Shopify's public product list) and every label is matched against it locally, so
+  a batch never runs into the shop's limit on searches. A price is only filled in when it is
+  certain: the label's number is the SKU of one variant (colour, size), and every word of the
+  label's name is in that variant's name. A name-only match, or a number and name that point to
   different products, becomes a question instead of a guess.
 - **Reviewing (`review.py`, `ui/`).** Each doubtful label gets one plain question in Danish, with
   the webshop's likely products as picture cards. A product the user picked for the same label
@@ -88,8 +90,8 @@ fix in how OCR text is positioned.
 
 ## Tests
 
-The tests run the real pipeline without the OCR engine or the internet. OCR results and webshop responses
-for the 16 photos in `tests/fixtures/` are **recorded**. The OCR recordings are keyed by the decoded
+The tests run the real pipeline without the OCR engine or the internet. OCR results and the webshop's
+catalogue (the products the fixture photos need) are **recorded** in `tests/fixtures/`. The OCR recordings are keyed by the decoded
 image pixels, so any change in what the app would send to OCR shows up as a missing recording, not
 as a stale result.
 
@@ -126,9 +128,12 @@ src/label_miner/
   config.py       constants: shop URL, sizes, workers, export columns, colours
   settings.py     the user's settings, kept in %APPDATA%\Label Miner\settings.json
   choices.py      products the user picked for a label, suggested first next time
-  ocr.py          OCR engine, text blocks, picking the label's lines
-  parsing.py      the label's fields and warnings (pure functions)
-  shop.py         webshop search and the matching rules
+  records.py      the typed records: Label, Candidate, ShopResult, Record
+  ocr.py          OCR engine, text blocks, the label's lines in reading order
+  geometry.py     where a line of text sits and the direction it runs in
+  designs.py      the label designs: recognising one, its lines, its fields
+  parsing.py      what the designs share: number formats, OCR slips, parts
+  shop.py         the webshop's catalogue and the matching rules
   pipeline.py     one photo end to end
   review.py       the question shown for a doubtful label
   batch.py        zip extraction, temp-folder clean-up, export rows
@@ -138,6 +143,10 @@ tools/            regression run over a private photo set
 docs/manual/      generators for the Danish manual, guides and practice pack
 packaging/        PyInstaller spec, Inno Setup installer, build scripts
 ```
+
+Each label design is one class in `designs.py` (`LabelDesign`): it recognises its own text, picks
+its lines out of the photo and splits them into a `Label`. A new design is a new subclass added to
+`DESIGNS`.
 
 The user interface is in Danish, as the app is used in a Danish shop. Code, comments and docs are
 in English.

@@ -54,14 +54,10 @@ def answers() -> dict:
 
 @functools.cache
 def pipeline_results() -> dict:
-    """Every fixture photo run through the real pipeline: {name: {"parsed",
-    "warnings", "candidates"}}. "parsed" includes label_box and photo_turn."""
+    """Every fixture photo run through the real pipeline: {name: Record}
+    (see label_miner.records)."""
     from label_miner.pipeline import extract_label
 
     ocr, session = ocr_engine(), CachedSession(FIXTURES / "shop")
     cache, lock = {}, threading.Lock()
-    results = {}
-    for name in answers():
-        _, parsed, warnings, candidates = extract_label(ocr, PHOTOS / name, session, cache, lock)
-        results[name] = {"parsed": parsed, "warnings": warnings, "candidates": candidates}
-    return results
+    return {name: extract_label(ocr, PHOTOS / name, session, cache, lock) for name in answers()}

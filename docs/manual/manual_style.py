@@ -125,11 +125,11 @@ def section(title, key, kicker=None, lead=None):
     out.append(h)
     out.append(Spacer(1, 4))
     if lead:
-        out.append(Paragraph(lead, LEAD))
+        out.append(p(lead, LEAD))  # p(): symbols such as ⚙ need their own font
     return out
 
 
-SYMBOLS = "✓✗⚠✕"  # not in Segoe UI; drawn with Segoe UI Symbol
+SYMBOLS = "✓✗⚠✕⚙"  # not in Segoe UI; drawn with Segoe UI Symbol
 
 
 def p(text, style=BODY):

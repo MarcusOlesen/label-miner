@@ -4,13 +4,16 @@ webshop answers are replayed from the fixtures.
 Run only these with ``pytest -m gui``; skip them with ``pytest -m "not gui"``.
 """
 
+import copy
 import threading
 import tkinter as tk
+from dataclasses import replace
 
 import pytest
 
 from conftest import FIXTURES
 from harness import CachedSession, CachedSessionWithoutSkus
+from label_miner.records import ShopResult
 
 pytestmark = pytest.mark.gui
 
@@ -43,17 +46,21 @@ class FakeApp:
         self.finished, self.retried = [], []
         self.choices, self.remembered = {}, []
 
+    @property
+    def active_choices(self):
+        return self.choices
+
     def review_finished(self, record, updated):
-        self.finished.append((record["path"].name, updated is not None))
+        self.finished.append((record.path.name, updated is not None))
 
     def retry_review(self, record, working_image, standalone=False):
-        self.retried.append(record["path"].name)
+        self.retried.append(record.path.name)
 
     def upsert_result_row(self, *args):
         pass
 
     def remember_choice(self, mk_varenummer, varenavn, candidate):
-        self.remembered.append((mk_varenummer, varenavn, candidate["id"]))
+        self.remembered.append((mk_varenummer, varenavn, candidate.id))
 
 
 @pytest.fixture
@@ -61,15 +68,8 @@ def review(root, pipeline_results):
     from label_miner.ui.review_window import ReviewWindow
 
     def record(name):
-        result = pipeline_results[name]
-        return {
-            "path": FIXTURES / "photos" / name,
-            "raw_text": result["text"],
-            "parsed": dict(result["parsed"]),
-            "warnings": [tuple(w) for w in result["warnings"]],
-            "candidates": result["candidates"],
-            "review_pending": True,
-        }
+        """A fresh copy of the photo's record, waiting for review."""
+        return replace(copy.deepcopy(pipeline_results[name]), review_pending=True)
 
     app = FakeApp(root)
     window = ReviewWindow(app, record("24-9/IMG_0302.HEIC"))
@@ -81,18 +81,18 @@ def review(root, pipeline_results):
 def test_picking_a_suggestion_only_fills_the_fields(review, dialogs):
     window, app, record = review
     rec = window.record
-    before = dict(rec["parsed"])
+    before = copy.deepcopy(rec)
     window.select_candidate(0)
     assert window.entries["varenavn"].get().startswith("Manhattan")
     assert window.entries["price"].get() == "17.999 kr (24.999 kr)"
-    assert rec["parsed"] == before  # nothing saved yet
+    assert rec == before  # nothing saved yet
 
 
 def test_skipping_with_edits_asks_and_can_discard(review, dialogs):
     window, app, _ = review
     asked, answers = dialogs
     rec = window.record
-    before = dict(rec["parsed"])
+    before = copy.deepcopy(rec)
     window.select_candidate(0)
     answers["askyesnocancel"] = None  # "Annuller"
     window.skip()
@@ -100,7 +100,7 @@ def test_skipping_with_edits_asks_and_can_discard(review, dialogs):
     answers["askyesnocancel"] = False  # "Nej": discard
     window.skip()
     assert app.finished[-1] == ("IMG_0302.HEIC", False)
-    assert rec["parsed"] == before
+    assert rec == before
 
 
 def test_approving_saves_the_picked_product(review, dialogs):
@@ -109,9 +109,9 @@ def test_approving_saves_the_picked_product(review, dialogs):
     rec = window.record
     window.select_candidate(0)
     window.confirm()
-    assert rec["parsed"]["varenavn"].startswith("Manhattan")
-    assert "manhattan" in rec["parsed"]["url"]
-    assert rec["warnings"] == [] and rec["candidates"] == []
+    assert rec.label.varenavn.startswith("Manhattan")
+    assert "manhattan" in rec.url
+    assert rec.warnings == [] and rec.candidates == []
 
 
 def test_unpicking_restores_the_label(review, dialogs):
@@ -134,7 +134,7 @@ def test_unusual_stand_asks_before_approving(review, dialogs):
     window.entries["stand"].delete(0, tk.END)
     window.entries["stand"].insert(0, "a")
     window.confirm()
-    assert rec["parsed"]["stand"] == "A"
+    assert rec.label.stand == "A"
 
 
 def test_part_of_item_never_gets_a_price(review, dialogs):
@@ -199,9 +199,79 @@ def test_typed_number_fills_in_the_fields(review, dialogs, monkeypatch):
     run_refresh(window, monkeypatch)
     assert window.entries["varenavn"].get() == "Oris sofabord, marmor emperador | Ø82"
     assert window.entries["price"].get() == "1.999 kr (2.999 kr)"
-    assert "/products/oris-sofabord-marmor-emperador-o82" in window.record["parsed"]["url"]
-    assert [category for category, _ in window.record["warnings"]] == ["by_number"]
     assert window.question_title.cget("text") == "Er det den rigtige vare?"
+    rec = window.record
+    window.confirm()  # the found product's link is saved with the fields
+    assert rec.label.mk_varenummer == "106854"
+    assert "/products/oris-sofabord-marmor-emperador-o82" in rec.url
+
+
+def test_searching_only_fills_the_fields(review, dialogs, monkeypatch):
+    """Like picking a card: a search for a corrected number must not leave
+    the new product's name and price in the record next to the old number
+    when the label is then skipped."""
+    window, app, record = review
+    asked, answers = dialogs
+    window.load_record(record("24-9/IMG_0302.HEIC"))
+    rec = window.record
+    before = copy.deepcopy(rec)
+    for key in ("mk_varenummer", "varenavn"):
+        window.entries[key].delete(0, tk.END)
+    window.entries["mk_varenummer"].insert(0, "106854")
+    run_refresh(window, monkeypatch)
+    assert window.entries["varenavn"].get() == "Oris sofabord, marmor emperador | Ø82"
+    assert rec == before
+    answers["askyesnocancel"] = False  # "Nej": discard
+    window.skip()
+    assert asked[-1] == "Gem ændringerne?"
+    assert rec == before
+
+
+def test_searching_keeps_what_was_typed(review, dialogs, monkeypatch):
+    """A search without a certain product leaves the typed name and a typed
+    price alone."""
+    from label_miner.ui import review_window
+
+    window, app, record = review
+    window.load_record(record("24-9/IMG_0302.HEIC"))
+    cards = list(window.candidates)[:2]
+    assert len(cards) == 2
+
+    def uncertain(*args):
+        return ShopResult(candidates=cards), [("variant", "Navnet passer ikke præcist med hjemmesiden")]
+
+    monkeypatch.setattr(review_window, "look_up_product", uncertain)
+    for key in ("varenavn", "price"):
+        window.entries[key].delete(0, tk.END)
+    window.entries["varenavn"].insert(0, "Nord stol")
+    window.entries["price"].insert(0, "500 kr")
+    run_refresh(window, monkeypatch)
+    assert len(window.candidates) == 2
+    assert window.entries["varenavn"].get() == "Nord stol"
+    assert window.entries["price"].get() == "500 kr"
+    window.select_candidate(0)
+    window.select_candidate(0)  # picked, then undone: back to what was typed
+    assert window.entries["varenavn"].get() == "Nord stol"
+    assert window.entries["price"].get() == "500 kr"
+
+
+def test_a_failed_search_changes_nothing(review, dialogs, monkeypatch):
+    window, app, record = review
+
+    class NoInternet:
+        def get(self, *args, **kwargs):
+            raise ConnectionError("no internet")
+
+    window.load_record(record("24-9/IMG_0302.HEIC"))
+    fields, cards = window.read_fields(), list(window.candidates)
+    assert cards
+    app.http_session = NoInternet()
+    window.entries["mk_varenummer"].insert(tk.END, "9")
+    run_refresh(window, monkeypatch)
+    assert "no internet" in window.price_refresh_status.cget("text")
+    assert window.read_fields() == {**fields, "mk_varenummer": fields["mk_varenummer"] + "9"}
+    assert window.candidates == cards
+    assert window.price_refresh_button.cget("text") == window.SEARCH_BUTTON_TEXT
 
 
 def test_typed_number_fills_in_its_exact_variant(review, dialogs, monkeypatch):
@@ -216,28 +286,30 @@ def test_typed_number_fills_in_its_exact_variant(review, dialogs, monkeypatch):
     assert window.entries["price"].get() == "899 kr (1.399 kr)"
 
 
-def test_typed_number_with_variants_offers_cards(review, dialogs, monkeypatch):
-    """A product whose variants don't carry the number: all are offered."""
+def test_a_number_the_shop_doesnt_have_offers_cards_by_name(review, dialogs, monkeypatch):
+    """A number that is no variant's SKU: the name finds the product, and
+    each colour is a card to pick from."""
     window, app, record = review
     app.http_session = CachedSessionWithoutSkus(FIXTURES / "shop")
     window.load_record(record("4-11/IMG_0978.JPG"))
     for key in ("mk_varenummer", "varenavn"):
         window.entries[key].delete(0, tk.END)
     window.entries["mk_varenummer"].insert(0, "103284")
+    window.entries["varenavn"].insert(0, "Nord spisebordsstol")
     run_refresh(window, monkeypatch)
-    assert sorted(candidate["name"] for candidate in window.candidates) == [
+    assert sorted(candidate.name for candidate in window.candidates) == [
         "Nord spisebordsstol Beige",
         "Nord spisebordsstol Taupe",
     ]
     window.select_candidate(0)
-    assert window.entries["varenavn"].get() == window.candidates[0]["name"]
+    assert window.entries["varenavn"].get() == window.candidates[0].name
     assert window.entries["price"].get() == "899 kr (1.399 kr)"
 
 
 def test_approving_a_picked_product_remembers_it_under_the_label(review, dialogs):
     window, app, record = review
     window.load_record(record("24-9/IMG_0292.HEIC"))  # German label
-    dark_beige = next(i for i, c in enumerate(window.candidates) if c["name"].endswith("Mørk Beige"))
+    dark_beige = next(i for i, c in enumerate(window.candidates) if c.name.endswith("Mørk Beige"))
     window.select_candidate(dark_beige)
     window.confirm()
     # Under the label's own name - not the shop's, which replaced it in the field
@@ -255,19 +327,19 @@ def test_typed_price_without_a_pick_is_not_remembered(review, dialogs):
 def test_remembered_product_is_selected_already(review, dialogs):
     window, app, record = review
     rec = record("24-9/IMG_0292.HEIC")
-    remembered = {**rec["candidates"][1], "found_by": "valgt før", "chosen_before": 2}
-    rec["candidates"] = [remembered, rec["candidates"][0]]
-    price = f"{remembered['price']} ({remembered['compare_price']})"
+    remembered = replace(rec.candidates[1], found_by="valgt før", chosen_before=2)
+    rec.candidates = [remembered, rec.candidates[0]]
+    price = f"{remembered.price} ({remembered.compare_price})"
     window.load_record(rec)
     assert window.selected_candidate is window.candidates[0]
-    assert window.entries["varenavn"].get() == remembered["name"]
+    assert window.entries["varenavn"].get() == remembered.name
     assert window.entries["price"].get() == price
     assert not window.fields_changed()  # the pre-selection is not the user's edit
     asked, _ = dialogs
     window.skip()  # nothing to ask, nothing saved
-    assert asked == [] and rec["parsed"]["price"] == ""
+    assert asked == [] and rec.price == ""
 
     window.load_record(rec)
     window.confirm()  # one click: approved, and remembered once more under the label's name
-    assert app.remembered == [("100718", "Lissabon 2-Sitzer-Sofa Rebel Dunkelbeige", remembered["id"])]
-    assert rec["parsed"]["price"] == price and rec["warnings"] == []
+    assert app.remembered == [("100718", "Lissabon 2-Sitzer-Sofa Rebel Dunkelbeige", remembered.id)]
+    assert rec.price == price and rec.warnings == []

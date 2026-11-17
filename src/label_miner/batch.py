@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import EXCEL_COLUMNS, SUPPORTED_EXTENSIONS
+from .records import Record
 from .review import warning_messages
 
 # The suffix Google Drive adds to a downloaded folder's zip,
@@ -142,6 +143,15 @@ def load_images_from_zip(zip_path: Path) -> tuple[list[Path], Path]:
     return image_files, extract_dir
 
 
+def export_directory(batch_folder: Path, chosen_folder: str = "") -> Path:
+    """Where the export is saved: the folder chosen in the settings, if it
+    still exists (a USB stick or network drive may be gone), else the
+    batch's own folder - next to the ZIP file or the photos."""
+    if chosen_folder and Path(chosen_folder).is_dir():
+        return Path(chosen_folder)
+    return batch_folder
+
+
 def unique_export_path(directory: Path, base_name: str) -> Path:
     """A new file name for the export: "24-9.xlsx", else "24-9 (1).xlsx", ...
     An existing file is never overwritten."""
@@ -156,12 +166,12 @@ def unique_export_path(directory: Path, base_name: str) -> Path:
         counter += 1
 
 
-def _antal(record: dict) -> int | None:
-    value = record["parsed"].get("antal", "")
+def _antal(record: Record) -> int | None:
+    value = record.label.antal
     return int(value) if value.isdigit() and int(value) > 0 else None
 
 
-def pieces(records: list[dict], stk_from_antal: bool = False) -> int:
+def pieces(records: list[Record], stk_from_antal: bool = False) -> int:
     """STK for photos of one item.
 
     By default each photo is one piece. With stk_from_antal (a setting on
@@ -174,7 +184,7 @@ def pieces(records: list[dict], stk_from_antal: bool = False) -> int:
     return sum(_antal(record) or 1 for record in records)
 
 
-def _stk_note(records: list[dict], stk_from_antal: bool) -> str:
+def _stk_note(records: list[Record], stk_from_antal: bool) -> str:
     """A comment when STK may count the same pieces twice: several photos of
     one item whose labels say Antal 2+ - a retake, or each piece's label
     showing the whole order line's Antal. Without a number in it: this
@@ -187,7 +197,7 @@ def _stk_note(records: list[dict], stk_from_antal: bool) -> str:
     return "OBS: flere billeder af samme vare med Antal - tjek STK"
 
 
-def excel_rows(records: list[dict], batch_name: str, stk_from_antal: bool = False) -> list[list]:
+def excel_rows(records: list[Record], batch_name: str, stk_from_antal: bool = False) -> list[list]:
     """The export's rows: the batch name, then one row per item.
 
     Photos of the same item (same MK number, order number and STAND) become
@@ -199,33 +209,33 @@ def excel_rows(records: list[dict], batch_name: str, stk_from_antal: bool = Fals
     rows = [[batch_name] + [""] * (len(EXCEL_COLUMNS) - 1)]
     groups = {}
     for record in records:
-        parsed = record["parsed"]
-        key = (parsed.get("mk_varenummer", ""), parsed.get("mk_ordrenr", ""), parsed.get("stand", ""))
+        label = record.label
+        key = (label.mk_varenummer, label.mk_ordrenr, label.stand)
         if not any(key):
             key = ("__unique__", id(record))
         group = groups.setdefault(key, {"first": record, "records": [], "image_names": []})
         group["records"].append(record)
-        group["image_names"].append(record["path"].name)
+        group["image_names"].append(record.path.name)
 
     for group in groups.values():
         record = group["first"]
-        parsed = record["parsed"]
-        warning_text = " | ".join(warning_messages(record.get("warnings") or []))
+        label = record.label
+        warning_text = " | ".join(warning_messages(record.warnings))
         stk_note = _stk_note(group["records"], stk_from_antal)
-        comments = " | ".join(value for value in (parsed.get("price", ""), warning_text, stk_note) if value)
+        comments = " | ".join(value for value in (record.price, warning_text, stk_note) if value)
         rows.append(
             [
                 "",
-                parsed.get("varenavn", ""),
-                parsed.get("mk_varenummer", ""),
-                parsed.get("mk_ordrenr", ""),
-                parsed.get("stand", ""),
+                label.varenavn,
+                label.mk_varenummer,
+                label.mk_ordrenr,
+                label.stand,
                 pieces(group["records"], stk_from_antal),
                 "X",
                 comments,
                 "",
                 "",
-                parsed.get("url", ""),
+                record.url,
                 ", ".join(group["image_names"]),
             ]
         )

@@ -15,6 +15,7 @@ app's clean-up of old temp folders is switched off here).
 """
 
 import ctypes
+import os
 import shutil
 import sys
 import tempfile
@@ -61,6 +62,9 @@ DEMO = [
 class Session:
     def __init__(self):
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        # The default settings and no remembered products, whatever the
+        # person building the manual has chosen (see label_miner.settings)
+        os.environ["APPDATA"] = tempfile.mkdtemp(prefix="label_miner_manual_settings_")
         engine = demo_data.ocr_engine()
         app_module.LabelMinerApp.load_ocr_engine = lambda app: setattr(app, "ocr_engine", engine)
         app_module.clean_up_old_extract_dirs = lambda *args: []  # leave %TEMP% alone
@@ -192,6 +196,7 @@ def steps(s, out, result):
     button = s.box(app.select_button)
     hint = s.box(s.find(app.select_frame, "...eller træk billeder eller en ZIP-fil ind i vinduet"))
     help_button = s.box(s.find(app.select_frame, "?  Hjælp"))
+    settings_button = s.box(app.settings_button)
     save(
         "01_start",
         annotate(
@@ -202,9 +207,33 @@ def steps(s, out, result):
                 (1, left_of(button, d(30))),
                 (2, left_of(hint, d(30))),
                 (3, left_of(help_button, d(26))),
+                (4, right_of(settings_button, d(26))),
             ],
         ),
     )
+
+    # 1b. The settings window ------------------------------------------------------
+    window = app.open_settings()
+    yield 600
+    img = s.shot(window)
+    rows = app.settings_rows
+    save(
+        "15_indstillinger",
+        annotate(
+            img,
+            scale=sc,
+            circles=[
+                (1, left_of(s.box(rows["save_excel"][1]), d(24))),
+                (2, left_of(s.box(app.folder_text), d(22))),
+                (3, left_of(s.box(rows["open_excel"][1]), d(24))),
+                (4, left_of(s.box(rows["stk_from_antal"][1]), d(24))),
+                (5, left_of(s.box(rows["remember_choices"][1]), d(24))),
+                (6, left_of(s.box(rows["appearance"][1]), d(24))),
+            ],
+        ),
+    )
+    window.destroy()
+    yield 300
 
     # 2. Reading: taken while the batch is still being worked on ---------------
     for name, _ in DEMO:
@@ -254,7 +283,7 @@ def steps(s, out, result):
     yield 300
     window = app.review_window
     window.window.geometry(f"{d(1180)}x{d(780)}+40+40")
-    records = {record["path"].name: record for record in app.records}
+    records = {record.path.name: record for record in app.records}
     shots = {}
 
     def review(name, select=None, tools=False):
@@ -425,8 +454,8 @@ def steps(s, out, result):
 
     # 11. All reviewed -> exported ----------------------------------------------
     for record in app.records:
-        if record.get("review_pending"):
-            record["warnings"] = []
+        if record.review_pending:
+            record.warnings = []
             app.review_finished(record, record)
     window.hide()
     yield lambda: app.exported

@@ -24,6 +24,7 @@ from datetime import date
 from pathlib import Path
 
 from .parsing import WHITESPACE_RE
+from .records import Candidate
 from .settings import settings_path
 from .shop import name_tokens
 from .util import debug_log
@@ -75,19 +76,19 @@ def save_choices(choices: Choices, path: Path | None = None) -> None:
         debug_log(f"Could not save remembered choices {path}: {error}")
 
 
-def remember_choice(choices: Choices, mk_varenummer: str, varenavn: str, candidate: dict) -> bool:
+def remember_choice(choices: Choices, mk_varenummer: str, varenavn: str, candidate: Candidate) -> bool:
     """Record that the user picked `candidate` for this label. The same
     product again counts up; another product replaces it. Returns whether
     anything was recorded."""
     key = choice_key(mk_varenummer, varenavn)
-    if key is None or not candidate.get("id") or not candidate.get("url"):
+    if key is None or not candidate.id or not candidate.url:
         return False
     old = choices.get(key)
-    count = old["count"] + 1 if old and old.get("variant_id") == candidate["id"] else 1
+    count = old["count"] + 1 if old and old.get("variant_id") == candidate.id else 1
     choices[key] = {
-        "variant_id": candidate["id"],
-        "url": candidate["url"],
-        "name": candidate["name"],
+        "variant_id": candidate.id,
+        "url": candidate.url,
+        "name": candidate.name,
         "count": count,
         "last": date.today().isoformat(),
     }

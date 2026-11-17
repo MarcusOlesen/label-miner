@@ -7,14 +7,15 @@ priority, with the fields it concerns marked.
 
 from .config import COLOR_ERROR, COLOR_WARNING
 from .parsing import MISSING_FIELD_NAMES
+from .records import Warning
 
 
-def warning_messages(warnings: list[tuple[str, str]]) -> list[str]:
+def warning_messages(warnings: list[Warning]) -> list[str]:
     """Flatten (category, message) warning tuples down to just the messages."""
     return [message for _, message in warnings]
 
 
-def review_question(warnings: list[tuple[str, str]], part: str = "") -> dict | None:
+def review_question(warnings: list[Warning], part: str = "") -> dict | None:
     """The one thing the user is asked about a label, in plain Danish.
 
     Returns {"title", "detail", "fields", "others", "color"}: "fields" are

@@ -116,13 +116,17 @@ class CachedSession:
 
 class CachedSessionWithoutSkus(CachedSession):
     """The recorded webshop, but with no SKUs on the variants: stands in for
-    a product whose variants don't carry the label's number."""
+    labels whose numbers aren't on the shop, so only their names can find
+    the product."""
 
     def get(self, url, params=None, headers=None, timeout=None):
         response = super().get(url, params, headers, timeout)
-        if url.endswith(".js") and response.payload:
-            variants = [{**variant, "sku": ""} for variant in response.payload.get("variants", [])]
-            response = _Response(response.status_code, {**response.payload, "variants": variants})
+        if url.endswith("/products.json") and response.payload:
+            products = [
+                {**product, "variants": [{**variant, "sku": ""} for variant in product.get("variants", [])]}
+                for product in response.payload.get("products", [])
+            ]
+            response = _Response(response.status_code, {**response.payload, "products": products})
         return response
 
 
@@ -152,8 +156,8 @@ def _handle_of(url):
     return match.group(1) if match else None
 
 
-def score(answer: dict, parsed: dict, warnings: list, candidates: list) -> tuple[str, list[str]]:
-    """Compare one pipeline result with the answer key.
+def score(answer: dict, record) -> tuple[str, list[str]]:
+    """Compare one pipeline result (a Record, see extract_label) with the answer key.
 
     Returns (verdict, problems). Verdicts:
       "WRONG"     approved automatically although something is wrong - must never happen
@@ -168,9 +172,10 @@ def score(answer: dict, parsed: dict, warnings: list, candidates: list) -> tuple
     only in the answers for the new label design.
     """
     problems = []
+    label, warnings, candidates = record.label, record.warnings, record.candidates
     for field in LABEL_FIELDS + (("antal",) if "antal" in answer else ()):
-        if _compact(parsed.get(field)) != _compact(answer[field]):
-            problems.append(f"{field}: read {parsed.get(field)!r}, label says {answer[field]!r}")
+        if _compact(getattr(label, field)) != _compact(answer[field]):
+            problems.append(f"{field}: read {getattr(label, field)!r}, label says {answer[field]!r}")
 
     shop = answer.get("shop")
     if not warnings:  # approved automatically
@@ -179,28 +184,27 @@ def score(answer: dict, parsed: dict, warnings: list, candidates: list) -> tuple
         if shop == "unknown":
             problems.append("approved, but the right product is unknown, so it can't be checked")
         elif shop is None:
-            if parsed.get("price") or parsed.get("url"):
+            if record.price or record.url:
                 problems.append("product is not on the shop, but a price/URL was filled in")
         else:
-            if _handle_of(parsed.get("url")) != shop["handle"]:
-                problems.append(f"wrong product: {parsed.get('url')!r}, expected {shop['handle']!r}")
-            elif shop.get("variant") and _variant_of(parsed.get("url")) != shop["variant"]:
+            if _handle_of(record.url) != shop["handle"]:
+                problems.append(f"wrong product: {record.url!r}, expected {shop['handle']!r}")
+            elif shop.get("variant") and _variant_of(record.url) != shop["variant"]:
                 problems.append(f"wrong variant: expected {shop['variant']}")
-            if not parsed.get("price"):
+            if not record.price:
                 problems.append("approved without a price")
         return ("WRONG" if problems else "AUTO ok"), problems
 
     # In a review the user sees the name as read from the label
-    if _name_words(parsed.get("varenavn")) != _name_words(answer["varenavn"]):
-        problems.append(f"varenavn: read {parsed.get('varenavn')!r}, label says {answer['varenavn']!r}")
+    if _name_words(label.varenavn) != _name_words(answer["varenavn"]):
+        problems.append(f"varenavn: read {label.varenavn!r}, label says {answer['varenavn']!r}")
     if shop not in (None, "unknown"):
         offered = (
             any(
-                (shop.get("variant") and c.get("id") == shop["variant"])
-                or _handle_of(c.get("url")) == shop["handle"]
+                (shop.get("variant") and c.id == shop["variant"]) or _handle_of(c.url) == shop["handle"]
                 for c in candidates
             )
-            or _handle_of(parsed.get("url")) == shop["handle"]
+            or _handle_of(record.url) == shop["handle"]
         )
         if not offered:
             problems.append("the right product was not among the suggestions")

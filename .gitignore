@@ -12,3 +12,6 @@ dist/
 
 # Real photo batches (private; see tools/run_label_tests.py)
 data/
+
+# Models from the Docling era; the app no longer uses them
+docling-models/

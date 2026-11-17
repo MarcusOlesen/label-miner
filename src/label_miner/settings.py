@@ -16,7 +16,20 @@ from .util import debug_log
 DEFAULTS = {
     # STK = the label's Antal instead of one per photo (see batch.pieces)
     "stk_from_antal": False,
+    # Save the export as an Excel file when nothing is left to review
+    "save_excel": True,
+    # The folder to save it in; "" = next to the ZIP file or the photos
+    "export_folder": "",
+    # Open the Excel file once it is saved
+    "open_excel": False,
+    # Remember the product picked for a label, and suggest it next time (see choices.py)
+    "remember_choices": True,
+    # "dark" or "light" (see theme.apply_theme)
+    "appearance": "dark",
 }
+
+# Settings that only take some values; anything else means the default
+ALLOWED_VALUES = {"appearance": {"dark", "light"}}
 
 
 def settings_path() -> Path:
@@ -27,8 +40,8 @@ def settings_path() -> Path:
 
 
 def load_settings(path: Path | None = None) -> dict:
-    """The saved settings over the defaults; unknown keys and values of the
-    wrong type are ignored."""
+    """The saved settings over the defaults; unknown keys, values of the
+    wrong type and values a setting doesn't take are ignored."""
     settings = dict(DEFAULTS)
     path = path or settings_path()
     try:
@@ -40,8 +53,9 @@ def load_settings(path: Path | None = None) -> dict:
         return settings
     if isinstance(saved, dict):
         for key, default in DEFAULTS.items():
-            if isinstance(saved.get(key), type(default)):
-                settings[key] = saved[key]
+            value = saved.get(key)
+            if isinstance(value, type(default)) and value in ALLOWED_VALUES.get(key, {value}):
+                settings[key] = value
     return settings
 
 

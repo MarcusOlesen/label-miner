@@ -71,11 +71,11 @@ def photo(name, crop=None, max_side=900, as_taken=False):
     out = IMAGES / f"{Path(name).stem}_{kind}{'_taken' if as_taken else ''}.jpg"
     if not out.exists():
         image = load_label_photo(demo_data.PHOTOS / name)
-        parsed = RESULTS[name]["parsed"]
-        if parsed.get("photo_turn") and not as_taken:
-            image = image.rotate(parsed["photo_turn"], expand=True)
+        record = RESULTS[name]
+        if record.photo_turn and not as_taken:
+            image = image.rotate(record.photo_turn, expand=True)
         if crop == "label":
-            crop = parsed["label_box"]
+            crop = record.label_box
         if crop:
             w, h = image.size
             image = image.crop(
@@ -97,7 +97,7 @@ def square_photo(name, focus=0.5, as_taken=False, size=700):
     out = IMAGES / f"{Path(name).stem}_card{round(focus * 100)}{'_taken' if as_taken else ''}.jpg"
     if not out.exists():
         image = load_label_photo(demo_data.PHOTOS / name)
-        turn = RESULTS[name]["parsed"].get("photo_turn")
+        turn = RESULTS[name].photo_turn
         if turn and not as_taken:
             image = image.rotate(turn, expand=True)
         w, h = image.size
@@ -218,11 +218,11 @@ def label_card_photo(name, size=700):
     out = IMAGES / f"{Path(name).stem}_labelcard.jpg"
     if not out.exists():
         image = load_label_photo(demo_data.PHOTOS / name)
-        parsed = RESULTS[name]["parsed"]
-        if parsed.get("photo_turn"):
-            image = image.rotate(parsed["photo_turn"], expand=True)
+        record = RESULTS[name]
+        if record.photo_turn:
+            image = image.rotate(record.photo_turn, expand=True)
         w, h = image.size
-        left, top, right, bottom = parsed["label_box"]
+        left, top, right, bottom = record.label_box
         cx, cy = (left + right) / 2 * w, (top + bottom) / 2 * h
         box_w, box_h = (right - left) * w * 0.85, (bottom - top) * h * 0.85
         crop_w = max(box_w, box_h / CARD_RATIO)
@@ -472,7 +472,7 @@ def fotoguide():
             "Hold telefonen <b>retvendt</b> og lige på labelen – ikke på siden eller skråt.",
             "Hold telefonen stille, og <b>tryk på labelen</b> på skærmen, så den er skarp.",
             "<b>Ét billede pr. vare.</b> To billeder af samme vare tælles som STK = 2 "
-            "(med <i>STK = labelens Antal</i> slået til: ét billede pr. label).",
+            "(med <i>Brug labelens Antal som STK</i> slået til under ⚙: ét billede pr. label).",
         ],
     )
     avoid = (

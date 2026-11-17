@@ -6,6 +6,7 @@ import sys
 import tkinter as tk
 import traceback
 from pathlib import Path
+from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
 try:
@@ -57,14 +58,15 @@ def resolve_tk_color(widget, color, fallback="#202020"):
         return fallback
 
 
-def apply_theme(root):
-    """Apply the sv-ttk sleek light/dark theme if it's installed, and set a
-    baseline font/spacing that looks reasonable even without it. Returns
-    True if sv-ttk was actually applied, so the caller can hint at the
-    missing dependency instead of leaving the old look unexplained."""
+def apply_theme(root, appearance="dark"):
+    """Apply the sv-ttk sleek theme, dark or light (``appearance``), if it's
+    installed, and set a baseline font/spacing that looks reasonable even
+    without it. Returns True if sv-ttk was actually applied, so the caller
+    can hint at the missing dependency instead of leaving the old look
+    unexplained. Can be called again to switch between dark and light."""
     sv_ttk_applied = False
     if sv_ttk is not None:
-        sv_ttk.set_theme("dark")
+        sv_ttk.set_theme(appearance)
         sv_ttk_applied = True
 
     # Stock ttk (no theme package installed) defaults to a small system
@@ -117,3 +119,99 @@ def install_error_reporting(root):
             )
 
     root.report_callback_exception = report
+
+
+def switch_style():
+    """Style name for an on/off setting: sv-ttk's toggle switch, or a plain
+    checkbox without sv-ttk."""
+    return "Switch.TCheckbutton" if sv_ttk is not None else "TCheckbutton"
+
+
+def icon_glyph(widget, fluent_code, fallback, size=15):
+    """(text, font) for a Windows icon: the Segoe Fluent Icons glyph
+    (Windows 11), the same code in Segoe MDL2 Assets (Windows 10), or the
+    fallback character."""
+    families = set(tkfont.families(widget))
+    family = next((name for name in ("Segoe Fluent Icons", "Segoe MDL2 Assets") if name in families), None)
+    if family:
+        return fluent_code, (family, size)
+    return fallback, ("Segoe UI Symbol", size + 2)
+
+
+# sv-ttk's colours (-bg, -fg in its theme files): its themes don't report
+# them through ttk.Style.lookup
+SUN_VALLEY_COLORS = {"sun-valley-dark": ("#1c1c1c", "#fafafa"), "sun-valley-light": ("#fafafa", "#1c1c1c")}
+
+
+def theme_colors(widget):
+    """(background, text) of the active theme, as "#rrggbb" - for the plain
+    Tk widgets (icons, cards, the photo's backdrop) that don't follow the
+    theme by themselves."""
+    style = ttk.Style(widget)
+    if style.theme_use() in SUN_VALLEY_COLORS:
+        return SUN_VALLEY_COLORS[style.theme_use()]
+    background = resolve_tk_color(widget, style.lookup("TFrame", "background") or "#1c1c1c")
+    text = resolve_tk_color(widget, style.lookup("TLabel", "foreground") or "#ffffff", "#ffffff")
+    return background, text
+
+
+class Tooltip:
+    """A small box of text shown while the mouse rests on a widget, or right
+    away when it is clicked."""
+
+    DELAY = 300  # ms
+    WIDTH = 340  # px the text wraps at
+
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip = None
+        self.pending = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+        widget.bind("<Button-1>", self.show, add="+")
+
+    def _schedule(self, event=None):
+        self._cancel()
+        self.pending = self.widget.after(self.DELAY, self.show)
+
+    def _cancel(self):
+        if self.pending is not None:
+            self.widget.after_cancel(self.pending)
+            self.pending = None
+
+    def show(self, event=None):
+        self._cancel()
+        if self.tip is not None:
+            return
+        background, text_color = theme_colors(self.widget)
+        tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.attributes("-topmost", True)
+        border = tk.Frame(tip, background=shade_color(background, 0.3), padx=1, pady=1)
+        border.pack()
+        tk.Label(
+            border,
+            text=self.text,
+            font=DEFAULT_FONT,
+            background=shade_color(background, 0.1),
+            foreground=text_color,
+            justify="left",
+            wraplength=self.WIDTH,
+            padx=12,
+            pady=10,
+        ).pack()
+        tip.update_idletasks()
+        # Right of the widget, or left of it when that would leave the screen
+        x = self.widget.winfo_rootx() + self.widget.winfo_width() + 8
+        if x + tip.winfo_width() > self.widget.winfo_screenwidth():
+            x = self.widget.winfo_rootx() - tip.winfo_width() - 8
+        y = self.widget.winfo_rooty() - 4
+        tip.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        self.tip = tip
+
+    def hide(self, event=None):
+        self._cancel()
+        if self.tip is not None:
+            self.tip.destroy()
+            self.tip = None

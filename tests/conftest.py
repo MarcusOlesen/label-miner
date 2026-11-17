@@ -21,19 +21,17 @@ def answers() -> dict:
 
 @pytest.fixture(scope="session")
 def pipeline_results() -> dict:
-    """Every fixture photo run through the real pipeline, with recorded OCR and webshop answers."""
+    """Every fixture photo run through the real pipeline, with recorded OCR
+    and webshop answers: {name: Record}."""
     from label_miner.pipeline import extract_label
 
     engine = CachedOcrEngine(FIXTURES / "ocr")
     session = CachedSession(FIXTURES / "shop")
     cache, lock = {}, threading.Lock()
-    results = {}
-    for name in fixture_photos():
-        text, parsed, warnings, candidates = extract_label(
-            engine, FIXTURES / "photos" / name, session, cache, lock
-        )
-        results[name] = {"text": text, "parsed": parsed, "warnings": warnings, "candidates": candidates}
-    return results
+    return {
+        name: extract_label(engine, FIXTURES / "photos" / name, session, cache, lock)
+        for name in fixture_photos()
+    }
 
 
 @pytest.fixture
@@ -59,3 +57,14 @@ def dialogs(monkeypatch):
 def own_settings_file(tmp_path, monkeypatch):
     """The tests never read or write the user's real settings (see label_miner.settings)."""
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+
+
+@pytest.fixture(autouse=True)
+def no_waiting_for_the_shop(monkeypatch):
+    """The catalogue download pauses between pages and when the shop is
+    busy (see shop.download_catalogue); the tests note the pauses instead."""
+    from label_miner import shop
+
+    waits = []
+    monkeypatch.setattr(shop, "_wait", waits.append)
+    return waits

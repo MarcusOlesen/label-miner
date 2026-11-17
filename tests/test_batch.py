@@ -14,10 +14,12 @@ from label_miner.batch import (
     clean_up_old_extract_dirs,
     derive_source_folder,
     excel_rows,
+    export_directory,
     format_duration,
     load_images_from_zip,
     unique_export_path,
 )
+from label_miner.records import Label, Record
 
 
 def make_folder(base: Path, name: str, owner=None, age_hours: float = 0) -> Path:
@@ -90,12 +92,10 @@ def test_format_duration(seconds, text):
     assert format_duration(seconds) == text
 
 
-def record(name, number="", order="", stand="", price="", warnings=(), antal=None):
-    parsed = {"varenavn": "Vega sofa", "mk_varenummer": number, "mk_ordrenr": order, "stand": stand}
-    parsed["price"] = price
-    if antal is not None:  # only the new label design has it
-        parsed["antal"] = antal
-    return {"path": Path(name), "parsed": parsed, "warnings": list(warnings)}
+def record(name, number="", order="", stand="", price="", warnings=(), antal=""):
+    # antal: only the new label design prints it
+    label = Label(mk_varenummer=number, varenavn="Vega sofa", mk_ordrenr=order, stand=stand, antal=antal)
+    return Record(Path(name), label=label, price=price, warnings=list(warnings))
 
 
 def test_excel_rows_groups_photos_of_the_same_item():
@@ -165,3 +165,13 @@ def test_stk_from_antal_flags_a_possible_double_count():
     # No number in the note: Label Printer reads the column's highest number as
     # the recommended price, and a part of an item has no price of its own
     assert not any(character.isdigit() for character in item[7].split("|")[-1])
+
+
+def test_export_directory(tmp_path):
+    batch = tmp_path / "24-9"
+    chosen = tmp_path / "Eksport"
+    chosen.mkdir()
+    assert export_directory(batch) == batch  # by default: next to the photos
+    assert export_directory(batch, str(chosen)) == chosen
+    # A chosen folder that is gone (a USB stick, say): next to the photos
+    assert export_directory(batch, str(tmp_path / "gone")) == batch
