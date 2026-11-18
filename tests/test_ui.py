@@ -271,3 +271,14 @@ def test_remembered_product_is_selected_already(review, dialogs):
     window.confirm()  # one click: approved, and remembered once more under the label's name
     assert app.remembered == [("100718", "Lissabon 2-Sitzer-Sofa Rebel Dunkelbeige", remembered["id"])]
     assert rec["parsed"]["price"] == price and rec["warnings"] == []
+
+
+def test_a_pasted_line_break_becomes_a_space(review, dialogs):
+    window, app, record = review
+    rec = record("4-11/IMG_0974.JPG")
+    window.load_record(rec)
+    window.entries["varenavn"].delete(0, tk.END)
+    window.entries["varenavn"].insert(0, "Lyon chaiselong sofa |\nHøjrevendt")
+    window.entries["price"].insert(0, "9.499 kr")
+    window.confirm()
+    assert rec["parsed"]["varenavn"] == "Lyon chaiselong sofa | Højrevendt"

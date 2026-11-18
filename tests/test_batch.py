@@ -162,3 +162,14 @@ def test_stk_from_antal_flags_a_possible_double_count():
     [item] = excel_rows(records, "4-11", stk_from_antal=True)[1:]
     assert item[5] == 4
     assert item[7] == "999 kr | OBS: 2 billeder af samme vare med Antal - tjek STK"
+
+
+def test_every_cell_is_one_line():
+    """A line break in a name (pasted from the webshop's page) split the row
+    in two when pasted into Google Sheets, shifting the columns one left."""
+    rec = record("IMG_1.JPG", "103023", "151060", "B", price="1.999 kr (1.299 kr)")
+    rec["parsed"]["varenavn"] = "Eden spisebordsstol\nEgetræ | Naturflet\t"
+    rows = excel_rows([rec], "18/11")
+    assert rows[1][1:5] == ["Eden spisebordsstol Egetræ | Naturflet", "103023", "151060", "B"]
+    copied = "\n".join("\t".join(str(value) for value in row) for row in rows)
+    assert copied.count("\n") == 1 and all(line.count("\t") == 11 for line in copied.split("\n"))

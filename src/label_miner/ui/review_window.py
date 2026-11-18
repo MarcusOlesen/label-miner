@@ -10,7 +10,7 @@ from urllib.parse import quote
 from PIL import Image, ImageOps, ImageTk
 
 from ..config import COLOR_APPROVE, COLOR_APPROVE_ACTIVE, COLOR_MUTED, COLOR_OK, COLOR_WARNING, SHOP_URL
-from ..parsing import VALID_STANDS, item_part, part_note
+from ..parsing import VALID_STANDS, WHITESPACE_RE, item_part, part_note
 from ..pipeline import with_remembered_choice
 from ..review import review_question
 from ..shop import SHOP_WARNING_CATEGORIES, format_combined_price, look_up_product
@@ -843,12 +843,12 @@ class ReviewWindow:
         return image
 
     def read_fields(self):
+        """The fields as typed, each on one line: a line break or tab pasted
+        into a field (copied from the webshop's page, say) becomes a space."""
         values = {}
         for key, widget in self.entries.items():
-            if isinstance(widget, tk.Text):
-                values[key] = widget.get("1.0", tk.END).strip()
-            else:
-                values[key] = widget.get().strip()
+            text = widget.get("1.0", tk.END) if isinstance(widget, tk.Text) else widget.get()
+            values[key] = WHITESPACE_RE.sub(" ", text).strip()
         return values
 
     def confirm(self):

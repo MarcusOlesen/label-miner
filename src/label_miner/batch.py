@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import EXCEL_COLUMNS, SUPPORTED_EXTENSIONS
+from .parsing import WHITESPACE_RE
 from .review import warning_messages
 
 # The suffix Google Drive adds to a downloaded folder's zip,
@@ -211,20 +212,24 @@ def excel_rows(records: list[dict], batch_name: str, stk_from_antal: bool = Fals
         warning_text = " | ".join(warning_messages(record.get("warnings") or []))
         stk_note = _stk_note(group["records"], stk_from_antal)
         comments = " | ".join(value for value in (parsed.get("price", ""), warning_text, stk_note) if value)
+        row = [
+            "",
+            parsed.get("varenavn", ""),
+            parsed.get("mk_varenummer", ""),
+            parsed.get("mk_ordrenr", ""),
+            parsed.get("stand", ""),
+            pieces(group["records"], stk_from_antal),
+            "X",
+            comments,
+            "",
+            "",
+            parsed.get("url", ""),
+            ", ".join(group["image_names"]),
+        ]
+        # Every cell on one line: "Kopiér resultat" pastes the rows as tab-separated
+        # lines, so a line break inside a name (pasted from the webshop's page into
+        # the review window) split the row in two and shifted the columns
         rows.append(
-            [
-                "",
-                parsed.get("varenavn", ""),
-                parsed.get("mk_varenummer", ""),
-                parsed.get("mk_ordrenr", ""),
-                parsed.get("stand", ""),
-                pieces(group["records"], stk_from_antal),
-                "X",
-                comments,
-                "",
-                "",
-                parsed.get("url", ""),
-                ", ".join(group["image_names"]),
-            ]
+            [WHITESPACE_RE.sub(" ", value).strip() if isinstance(value, str) else value for value in row]
         )
     return rows

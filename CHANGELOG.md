@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Fix: a line break inside a field - for example a product name copied from the webshop's page
+  and pasted into the review window - split the row in two when "Kopiér resultat" was pasted into
+  Google Sheets: the rest of the name landed in column A and every column after it moved one to
+  the left. Fields now turn a pasted line break or tab into a space, and every cell of the export
+  is kept on one line whatever its source.
 - The new label design (left-aligned, "OUTLET · VARENR.", "ORDRE NR.", "Antal" and "Stand") is
   read. Both designs are supported side by side: each photo's design is told by the words on the
   label (VARENR. or ORDRE NR. in capitals mean the new one). The new design's lines are those that
