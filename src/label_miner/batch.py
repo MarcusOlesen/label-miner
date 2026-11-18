@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import EXCEL_COLUMNS, SUPPORTED_EXTENSIONS
+from .parsing import WHITESPACE_RE
 from .records import Record
 from .review import warning_messages
 
@@ -223,20 +224,24 @@ def excel_rows(records: list[Record], batch_name: str, stk_from_antal: bool = Fa
         warning_text = " | ".join(warning_messages(record.warnings))
         stk_note = _stk_note(group["records"], stk_from_antal)
         comments = " | ".join(value for value in (record.price, warning_text, stk_note) if value)
+        row = [
+            "",
+            label.varenavn,
+            label.mk_varenummer,
+            label.mk_ordrenr,
+            label.stand,
+            pieces(group["records"], stk_from_antal),
+            "X",
+            comments,
+            "",
+            "",
+            record.url,
+            ", ".join(group["image_names"]),
+        ]
+        # Every cell on one line: "Kopiér resultat" pastes the rows as tab-separated
+        # lines, so a line break inside a name (pasted from the webshop's page into
+        # the review window) split the row in two and shifted the columns
         rows.append(
-            [
-                "",
-                label.varenavn,
-                label.mk_varenummer,
-                label.mk_ordrenr,
-                label.stand,
-                pieces(group["records"], stk_from_antal),
-                "X",
-                comments,
-                "",
-                "",
-                record.url,
-                ", ".join(group["image_names"]),
-            ]
+            [WHITESPACE_RE.sub(" ", value).strip() if isinstance(value, str) else value for value in row]
         )
     return rows

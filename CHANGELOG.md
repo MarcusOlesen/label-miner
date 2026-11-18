@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- Fix: a line break inside a field - for example a product name copied from the webshop's page
+  and pasted into the review window - split the row in two when "Kopiér resultat" was pasted into
+  Google Sheets: the rest of the name landed in column A and every column after it moved one to
+  the left. Fields now turn a pasted line break or tab into a space, and every cell of the export
+  is kept on one line whatever its source.
+
 ## 2.5 - 2026-11-17
 - The webshop no longer blocks a batch. The shop's search allows a short burst and then about one
   search a minute, and each label used several, so 15-40 labels could be refused all at once.
