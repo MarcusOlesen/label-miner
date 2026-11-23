@@ -16,6 +16,9 @@ from .util import debug_log
 DEFAULTS = {
     # STK = the label's Antal instead of one per photo (see batch.pieces)
     "stk_from_antal": False,
+    # Look every label's product up on the webshop while the photos are read
+    # (see shop.py); off, the review window's search still works
+    "shop_lookup": True,
     # Save the export as an Excel file when nothing is left to review
     "save_excel": True,
     # The folder to save it in; "" = next to the ZIP file or the photos

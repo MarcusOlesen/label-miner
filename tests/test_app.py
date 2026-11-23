@@ -69,8 +69,14 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         # remember the products picked, dark look
         assert (app.save_excel.get(), app.export_folder.get(), app.open_excel.get()) == (True, "", False)
         assert app.remember_choices.get() and app.dark_appearance.get()
-        settings = app.open_settings()  # the ⚙ button on the start screen
-        assert app.open_settings() is settings  # a second click brings the same window forward
+        app.ocr_engine_ready()
+        settings = app.open_settings()  # the ⚙ button: a page of the main window, not a popup
+        root.update()
+        assert app.settings_open and not app.select_frame.winfo_ismapped()
+        app.close_settings()  # the back arrow (or Esc): the start screen again
+        root.update()
+        assert not app.settings_open and app.select_frame.winfo_ismapped()
+        assert app.open_settings() is settings  # built once, shown again
         app.settings_rows["stk_from_antal"][1].invoke()  # switching it on: remembered for the next run
         assert app.stk_from_antal.get() is True
         tooltip = app.settings_tooltips["stk_from_antal"]
@@ -103,9 +109,8 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         light_background = app.settings_button.cget("background")
         app.settings_rows["appearance"][1].invoke()
         assert app.settings_button.cget("background") != light_background
-        app.ocr_engine_ready()
         app.begin_processing(sorted(batch.iterdir()))
-        assert not settings.winfo_exists()  # the batch is made with the settings as they are
+        assert not app.settings_open  # the batch is made with the settings as they are
         run_until(root, lambda: not app.processing and app.work_completed >= len(photos))
 
         assert app.review_window is None  # no automatic popup
@@ -140,7 +145,7 @@ def test_a_whole_batch(tmp_path, monkeypatch, dialogs):
         rows = list(load_workbook(app.export_path).active.iter_rows(values_only=True))[2:]
         by_image = {row[11]: row for row in rows}
         assert by_image["IMG_0302.HEIC"][1].startswith("Manhattan")  # the conflict, resolved
-        assert by_image["IMG_0283.HEIC"][7] == "OBS: delvis vare (del 1/2)"  # part of an item: no price
+        assert by_image["IMG_0283.HEIC"][7] == "OBS: delvis vare (1/2)"  # part of an item: no price
         assert by_image["IMG_9164.HEIC"][1].startswith("Paris U-sofa")  # sideways, approved on its own
         # The products picked in the reviews are remembered for next time (see choices.py)
         assert any(choice["name"].startswith("Manhattan") for choice in load_choices().values())

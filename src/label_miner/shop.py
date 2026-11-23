@@ -16,6 +16,7 @@ products offered as choices.
 """
 
 import difflib
+import random
 import re
 import time
 from dataclasses import replace
@@ -119,8 +120,9 @@ CATALOGUE_MAX_AGE = 60 * 60
 CATALOGUE_RETRY_AFTER = 60
 # The product list also refuses requests that come too fast (HTTP 429): a
 # pause between its pages, and when refused, these waits before asking again
-# - once per batch, so waiting is better than failing (seconds)
-CATALOGUE_PAGE_PAUSE = 2
+# - once per batch, so waiting is better than failing (seconds). The pause is
+# a random length in this range, so the pages don't arrive like clockwork
+CATALOGUE_PAGE_PAUSE = (1.5, 3.5)
 CATALOGUE_BUSY_WAITS = (5, 15, 30)
 
 
@@ -200,7 +202,7 @@ def download_catalogue(session, report=None) -> Catalogue:
     products = []
     for page in range(1, CATALOGUE_MAX_PAGES + 1):
         if page > 1:
-            _wait(CATALOGUE_PAGE_PAUSE)
+            _wait(random.uniform(*CATALOGUE_PAGE_PAUSE))
         report(f"Henter hjemmesidens varer ({len(products)} indtil videre)…")
         data = _get_catalogue_page(session, page, report)
         page_products = data.get("products") or []
@@ -376,7 +378,7 @@ def look_up_product(
         warnings.append(
             (
                 "part",
-                f"Delvis vare (del {part}) - der sættes ingen pris. Tjek at labelen er læst rigtigt.",
+                f"Delvis vare ({part}) - der sættes ingen pris. Tjek at labelen er læst rigtigt.",
             )
         )
     return result, warnings

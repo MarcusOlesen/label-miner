@@ -45,6 +45,7 @@ class FakeApp:
         self.exported = False
         self.finished, self.retried = [], []
         self.choices, self.remembered = {}, []
+        self.settings = {"stk_from_antal": True}
 
     @property
     def active_choices(self):
@@ -141,7 +142,7 @@ def test_part_of_item_never_gets_a_price(review, dialogs):
     window, app, record = review
     window.load_record(record("24-9/IMG_0283.HEIC"))
     window.select_candidate(0)
-    assert window.entries["price"].get() == "OBS: delvis vare (del 1/2)"
+    assert window.entries["price"].get() == "OBS: delvis vare (1/2)"
 
 
 def test_zoom_and_upright_display(review, dialogs):
@@ -354,3 +355,22 @@ def test_a_pasted_line_break_becomes_a_space(review, dialogs):
     window.entries["price"].insert(0, "9.499 kr")
     window.confirm()
     assert rec.label.varenavn == "Lyon chaiselong sofa | Højrevendt"
+
+
+def test_antal_is_only_shown_when_it_counts(review, dialogs):
+    """Antal only matters with "Brug labelens Antal som STK" on; off, the
+    field is hidden and its value kept as read."""
+    window, app, record = review
+    rec = record("4-11/IMG_0974.JPG")
+    app.settings["stk_from_antal"] = False
+    window.load_record(rec)
+    window.window.update_idletasks()
+    assert not window.entries["antal"].winfo_ismapped()
+    antal = rec.label.antal
+    window.entries["price"].insert(0, "9.499 kr")
+    window.confirm()
+    assert rec.label.antal == antal
+    app.settings["stk_from_antal"] = True
+    window.load_record(record("4-11/IMG_0974.JPG"))
+    window.window.update_idletasks()
+    assert window.entries["antal"].winfo_ismapped()

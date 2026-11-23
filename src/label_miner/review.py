@@ -82,7 +82,7 @@ def review_question(warnings: list[Warning], part: str = "") -> dict | None:
         }
     if "part" in by_category:
         return {
-            "title": f"Delvis vare (del {part})" if part else "Delvis vare",
+            "title": f"Delvis vare ({part})" if part else "Delvis vare",
             "detail": "Kun en del af varen – der sættes ingen pris. Tjek nummer og navn.",
             "fields": ["mk_varenummer", "varenavn"],
             "others": [

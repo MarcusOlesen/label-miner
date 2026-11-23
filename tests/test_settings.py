@@ -35,9 +35,11 @@ def test_a_file_that_cant_be_written_is_no_error(tmp_path):
 
 def test_the_defaults():
     """Save the Excel file next to the photos without opening it, remember
-    the products picked, one piece per photo, the dark look."""
+    the products picked, look every label up on the webshop, one piece per
+    photo, the dark look."""
     assert DEFAULTS == {
         "stk_from_antal": False,
+        "shop_lookup": True,
         "save_excel": True,
         "export_folder": "",
         "open_excel": False,

@@ -155,14 +155,14 @@ def build_story(export_rows):
         front_title("Label Miner", demo_data.ICON),
         Spacer(1, 6),
         p(
-            "Læser labels på billederne af varerne, finder varen og prisen på hjemmesiden og "
-            "laver et Excel-ark til Google Sheets. Du skal kun kigge på de labels, programmet "
-            "er i tvivl om.",
+            "Programmet læser labels på billederne af varerne, finder varen og prisen på "
+            "hjemmesiden og laver rækkerne til Google Sheets. Du skal kun kigge på de labels, "
+            "programmet er i tvivl om.",
             LEAD,
         ),
         p(
-            f"Version {APP_VERSION}. Klik på et emne for at springe dertil. Vejledningen "
-            "åbnes også med knappen <b>?&nbsp;Hjælp</b> i programmet.",
+            f"Version {APP_VERSION}. Klik på et emne for at gå direkte til det. Du kan også "
+            "åbne vejledningen med knappen <b>?&nbsp;Hjælp</b> i programmet.",
             SMALL,
         ),
         Spacer(1, 4),
@@ -199,14 +199,15 @@ def build_story(export_rows):
                     (1, "<b>Resultatlisten:</b> én række pr. billede med varenavn, nummer og stand."),
                     (
                         2,
-                        "<b>Status:</b> <font color='#2e8b3e'><b>OK</b></font> er klar. "
-                        "<font color='#b8860b'><b>Gennemse</b></font> skal du kigge på. "
-                        "<font color='#c0392b'><b>Fejl</b></font> kunne ikke læses.",
+                        "<b>Status:</b> <font color='#2e8b3e'><b>OK</b></font> betyder, at labelen "
+                        "er klar. <font color='#b8860b'><b>Gennemse</b></font> betyder, at du skal "
+                        "kigge på den. <font color='#c0392b'><b>Fejl</b></font> betyder, at billedet "
+                        "ikke kunne læses.",
                     ),
                     (
                         3,
-                        "<b>Gennemse labels</b> åbner vinduet, hvor du tjekker dem. Tallet er, hvor mange "
-                        "der venter. Knappen forsvinder, når der ikke er flere.",
+                        "<b>Gennemse labels</b> åbner vinduet, hvor du tjekker dem. Tallet viser, hvor "
+                        "mange der venter. Knappen forsvinder, når der ikke er flere.",
                     ),
                     (4, "<b>? Hjælp</b> åbner denne vejledning."),
                 ],
@@ -232,27 +233,27 @@ def build_story(export_rows):
         ),
         (
             "Vælg ZIP-filen",
-            "Åbn Label Miner og klik <b>Vælg billeder eller ZIP</b> – eller træk "
+            "Åbn Label Miner, og klik på <b>Vælg billeder eller ZIP</b> – eller træk "
             f"ZIP-filen ind i vinduet. {link('trin1', 'Se trin 1')}",
         ),
         (
             "Vent",
-            "Programmet læser alle labels selv og finder priserne. De fleste bliver "
+            "Programmet læser alle labels og finder priserne selv. De fleste får status "
             f"<b>OK</b>. {link('trin2', 'Se trin 2')}",
         ),
         (
             "Gennemse",
-            "Klik <b>Gennemse labels</b>. Læs spørgsmålet øverst, ret eller vælg, og tryk "
+            "Klik på <b>Gennemse labels</b>. Læs spørgsmålet øverst, ret eller vælg, og tryk "
             f"<b>Godkend og næste</b>. {link('trin3', 'Se trin 3')}",
         ),
         (
             "Excel",
-            "Når alle er gennemset, gemmes Excel-filen af sig selv ved siden af ZIP-filen. "
-            f"Klik <b>Kopiér resultat</b>. {link('trin4', 'Se trin 4')}",
+            "Når alle er gennemset, gemmes Excel-filen automatisk i samme mappe som ZIP-filen. "
+            f"Klik på <b>Kopiér resultat</b>. {link('trin4', 'Se trin 4')}",
         ),
         (
             "Google Sheets",
-            "Klik i kolonne A i den første tomme række i arket og tryk <b>Ctrl+V</b>. "
+            "Klik i kolonne A i den første tomme række i arket, og tryk <b>Ctrl+V</b>. "
             f"{link('trin5', 'Se trin 5')}",
         ),
     ]
@@ -282,7 +283,8 @@ def build_story(export_rows):
     s.append(
         note(
             "<b>Programmet gætter aldrig en pris.</b> Er det bare en smule i tvivl om varen "
-            "eller prisen, spørger det dig i stedet. Derefter laves etiketterne i Label Printer."
+            "eller prisen, spørger det dig i stedet. Når arket er udfyldt, laver du etiketterne "
+            "i Label Printer som altid."
         )
     )
     s.append(PageBreak())
@@ -292,7 +294,7 @@ def build_story(export_rows):
         TITLE["trin1"],
         "trin1",
         "Trin 1",
-        "Programmet tager en ZIP-fil fra Google Drive eller billeder, du vælger direkte.",
+        "Vælg ZIP-filen fra Google Drive – eller vælg selv de billeder, der skal læses.",
     )
     img_w = 505
     s.append(
@@ -314,9 +316,9 @@ def build_story(export_rows):
                         (3, "<b>? Hjælp</b> åbner denne vejledning."),
                         (
                             4,
-                            "<b>⚙</b> åbner indstillingerne: om og hvor Excel-filen gemmes, STK, "
-                            "huskede varer og lyst eller mørkt udseende. Se siden "
-                            "<i>Indstillinger</i>.",
+                            "<b>⚙</b> viser indstillingerne: om og hvor Excel-filen gemmes, STK, "
+                            "opslag på hjemmesiden, huskede varer og lyst eller mørkt udseende. Se "
+                            "siden <i>Indstillinger</i>.",
                         ),
                     ],
                     W - img_w - GAP,
@@ -326,7 +328,7 @@ def build_story(export_rows):
                     "ZIP-filen og får mappens navn, fx <i>24-9.xlsx</i>."
                 ),
                 Spacer(1, 8),
-                p("Billeder fra iPhone (HEIC), JPG og PNG kan læses.", SMALL),
+                p("Programmet kan læse billeder fra iPhone (HEIC), JPG og PNG.", SMALL),
             ],
             img_w,
         )
@@ -344,7 +346,11 @@ def build_story(export_rows):
             [
                 callouts(
                     [
-                        (1, "<b>Fremgang:</b> hvor mange der er læst, og hvor lang tid der ca. er tilbage."),
+                        (
+                            1,
+                            "<b>Bjælken</b> viser, hvor mange billeder der er læst, og cirka hvor lang "
+                            "tid der er tilbage.",
+                        ),
                         (
                             2,
                             "<b>Listen</b> fyldes op, efterhånden som billederne bliver læst. "
@@ -374,7 +380,7 @@ def build_story(export_rows):
         TITLE["trin3"],
         "trin3",
         "Trin 3",
-        "Klik <b>Gennemse labels</b>. Vinduet viser én label ad gangen – billedet til "
+        "Klik på <b>Gennemse labels</b>. Vinduet viser én label ad gangen – billedet til "
         "venstre og det, programmet har læst, til højre.",
     )
     img_w = 520
@@ -390,7 +396,7 @@ def build_story(export_rows):
                     ),
                     (
                         2,
-                        "<b>Hvilken vare er det?</b> Varer fra hjemmesiden med billede og pris. "
+                        "<b>Hvilken vare er det?</b> Forslag fra hjemmesiden med billede og pris. "
                         f"{link('vaelg', 'Se hvordan du vælger')}",
                     ),
                     (3, "<b>Felterne</b> med ⚠ er dem, spørgsmålet handler om. Du kan rette i alle felter."),
@@ -415,8 +421,9 @@ def build_story(export_rows):
     s.append(Spacer(1, 8))
     s.append(
         note(
-            "Lukker du vinduet med <b>✕</b>, gemmes din plads: tryk <b>Gennemse labels</b> "
-            "igen, så fortsætter du med samme label – også det, du havde skrevet."
+            "Lukker du vinduet med <b>✕</b>, husker programmet, hvor du var. Tryk på "
+            "<b>Gennemse labels</b> igen, så fortsætter du med den samme label – og det, du "
+            "havde skrevet, står der stadig."
         )
     )
     s.append(PageBreak())
@@ -443,15 +450,16 @@ def build_story(export_rows):
                     W - img_w - GAP,
                 ),
                 note(
-                    "<b>Fortryd:</b> klik på den valgte vare igen – så står der igen det, labelen "
-                    "sagde. Intet bliver gemt, før du trykker <b>Godkend og næste</b>."
+                    "<b>Fortryd:</b> klik på den valgte vare igen. Så står der det samme som på "
+                    "labelen igen. Intet bliver gemt, før du trykker på <b>Godkend og næste</b>."
                 ),
                 Spacer(1, 8),
                 p(
                     "Under hver vare står, om den er fundet <i>via nummer</i> (nummeret på labelen) "
-                    "eller <i>via navn</i>. Står den der ikke, må du gerne skrive navn og pris selv. "
-                    "Har du valgt en vare til samme label før, står den øverst – <i>valgt før</i> – og "
-                    "er allerede valgt: tjek den, og godkend. Programmet godkender den aldrig selv.",
+                    "eller <i>via navn</i>. Er den rigtige vare ikke blandt forslagene, kan du selv "
+                    "skrive navn og pris. Har du valgt en vare til den samme label før, står den "
+                    "øverst med teksten <i>valgt før</i> og er valgt på forhånd. Tjek den, og godkend – "
+                    "programmet godkender den aldrig selv.",
                     SMALL,
                 ),
             ],
@@ -478,35 +486,35 @@ def build_story(export_rows):
             "Er det den rigtige vare?",
             "Nummeret findes ikke på hjemmesiden (fx et leverandørnummer som <i>UE 45990201</i>), "
             "men varen er fundet via navnet.",
-            "Tjek at forslaget passer, klik på det og godkend.",
+            "Tjek, at forslaget passer. Klik på det, og godkend.",
         ],
         [
             "Vælg den rigtige vare",
             "Varen er fundet, men navnet passer ikke præcist (fx en tysk label).",
-            "Den udgave, nummeret hører til, står øverst. Tjek den, vælg og godkend.",
+            "Den udgave, nummeret hører til, står øverst. Tjek den, vælg den, og godkend.",
         ],
         [
-            "Delvis vare (del 1/2)",
-            "Kun en del af varen, og hjemmesiden kunne ikke bekræfte den på nummer og navn. "
-            "Der sættes aldrig pris, og i kommentaren står <i>OBS: delvis vare</i>.",
+            "Delvis vare (1/2)",
+            "Labelen gælder kun en del af varen, og hjemmesiden kunne ikke bekræfte varen ud fra "
+            "nummer og navn. Der sættes aldrig pris, og i kommentaren står <i>OBS: delvis vare</i>.",
             "Tjek nummer og navn. Vælg gerne varen – så får den navn og link, men ingen pris.",
         ],
         [
             "Varen findes ikke på hjemmesiden",
-            "Hverken nummer eller navn gav en vare.",
+            "Programmet fandt ingen vare ud fra hverken nummer eller navn.",
             "Tjek felterne mod billedet. Skriv prisen, hvis du kender den.",
         ],
         [
             "Skriv STAND (A, B eller C)",
-            "Standen står ikke på labelen, eller kunne ikke læses.",
+            "Standen står ikke på labelen eller kunne ikke læses.",
             "Skriv standen.",
         ],
         ["Tjek STAND", "Der står noget andet end A, B eller C (fx »AP«).", "Ret den til A, B eller C."],
         [
             "Nogle felter kunne ikke læses",
             "Billedet er uskarpt, eller labelen er dækket.",
-            f"Skriv felterne ud fra billedet, eller {link('billede', 'drej eller beskær')} og læs "
-            "billedet igen.",
+            f"Skriv felterne ud fra billedet – eller {link('billede', 'drej eller beskær')} billedet, "
+            "og tryk på <b>Læs billedet igen</b>.",
         ],
     ]
     widths = [W * 0.28, W * 0.4, W * 0.32]
@@ -537,7 +545,7 @@ def build_story(export_rows):
                 "06_delvis",
                 "Delvis vare",
                 [
-                    (1, "Kun en del af varen – der sættes <b>ingen pris</b>."),
+                    (1, "Labelen gælder kun en del af varen – der sættes <b>ingen pris</b>."),
                     (2, "Vælg gerne varen: den giver navn og link, men stadig ingen pris."),
                     (3, "I kommentaren står <i>OBS: delvis vare</i>."),
                 ],
@@ -546,7 +554,7 @@ def build_story(export_rows):
                 "07_ikke_fundet",
                 "Ikke på hjemmesiden",
                 [
-                    (1, "Hverken nummer eller navn gav en vare."),
+                    (1, "Programmet fandt ingen vare ud fra hverken nummer eller navn."),
                     (2, "Tjek felterne mod billedet, og skriv prisen, hvis du kender den."),
                 ],
             ),
@@ -560,7 +568,7 @@ def build_story(export_rows):
                 "08_stand",
                 "Tjek STAND",
                 [
-                    (1, "Labelen siger »AP«."),
+                    (1, "Der står »AP« på labelen."),
                     (2, "Ret feltet til <b>A</b>, <b>B</b> eller <b>C</b>, og godkend."),
                 ],
             ),
@@ -569,7 +577,7 @@ def build_story(export_rows):
                 "Fundet via navnet",
                 [
                     (1, "Nummeret er et leverandørnummer, der ikke findes på hjemmesiden."),
-                    (2, "Passer forslaget, så klik på det og godkend."),
+                    (2, "Passer forslaget, så klik på det, og godkend."),
                 ],
             ),
         )
@@ -594,21 +602,21 @@ def build_story(export_rows):
                         (2, "<b>Vis hele billedet</b> / <b>Zoom ind på labelen</b>."),
                         (
                             3,
-                            "<b>Læs billedet igen</b> – efter du har drejet eller beskåret det. Felterne "
+                            "<b>Læs billedet igen</b>, når du har drejet eller beskåret det. Felterne "
                             "bliver læst forfra.",
                         ),
-                        (4, "Under <b>Flere værktøjer</b>: skyder til at rette billedet præcist op."),
+                        (4, "Under <b>Flere værktøjer</b> er der en skyder, så du kan rette billedet præcist op."),
                         (5, "<b>Spejl</b> og <b>Nulstil billede</b>."),
                         (6, "<b>Tekst læst fra labelen</b> – præcis det, programmet kunne læse."),
                     ],
                     W - img_w - GAP,
                 ),
                 note(
-                    "<b>Beskær:</b> træk en firkant på billedet rundt om labelen, og tryk "
+                    "<b>Beskær:</b> træk en firkant på billedet rundt om labelen, og tryk på "
                     "<b>Læs billedet igen</b>."
                 ),
                 Spacer(1, 8),
-                p("Labels, der er fotograferet på siden, drejer programmet selv.", SMALL),
+                p("Er labelen fotograferet på siden, drejer programmet den selv.", SMALL),
             ],
             img_w,
         )
@@ -617,7 +625,7 @@ def build_story(export_rows):
 
     # ---- Step 4 -----------------------------------------------------------------------------
     s += section(
-        TITLE["trin4"], "trin4", "Trin 4", "Når alle labels er gennemset, gemmes Excel-filen af sig selv."
+        TITLE["trin4"], "trin4", "Trin 4", "Når alle labels er gennemset, gemmes Excel-filen automatisk."
     )
     img_w = 400
     s.append(
@@ -640,9 +648,9 @@ def build_story(export_rows):
                     W - img_w - GAP,
                 ),
                 note(
-                    "Er den samme vare fotograferet flere gange, bliver den til én række. "
-                    "<b>STK</b> = antal billeder. Er <i>Brug labelens Antal som STK</i> slået til "
-                    "under <b>⚙</b> på startskærmen, tæller hvert billede i stedet som labelens Antal."
+                    "Er den samme vare fotograferet flere gange, bliver den til én række, og "
+                    "<b>STK</b> er antallet af billeder. Er <i>Brug labelens Antal som STK</i> slået "
+                    "til under <b>⚙</b>, tæller hvert billede i stedet som labelens Antal."
                 ),
             ],
             img_w,
@@ -671,8 +679,8 @@ def build_story(export_rows):
         TITLE["trin5"],
         "trin5",
         "Trin 5",
-        "Efter <b>Kopiér resultat</b> sætter du rækkerne ind i Google Sheets – samme ark "
-        "som Label Printer bruger.",
+        "Når du har klikket på <b>Kopiér resultat</b>, sætter du rækkerne ind i Google Sheets – "
+        "i det samme ark, som Label Printer bruger.",
     )
     img_w = 500
     s.append(
@@ -693,8 +701,8 @@ def build_story(export_rows):
                         ),
                         (
                             3,
-                            "<b>Varenummer</b> (A) og <b>Pris pr stk</b> (I) er tomme – dem kender "
-                            "Label Miner ikke. De udfyldes i arket.",
+                            "<b>Varenummer</b> (A) og <b>Pris pr stk</b> (I) er tomme. Dem kender "
+                            "Label Miner ikke, så de udfyldes i arket.",
                         ),
                     ],
                     W - img_w - GAP,
@@ -705,7 +713,7 @@ def build_story(export_rows):
                 ),
                 Spacer(1, 8),
                 p(
-                    "Rækker med <i>OBS: delvis vare</i> får ingen pris. Når arket er udfyldt, laves "
+                    "Rækker med <i>OBS: delvis vare</i> får ingen pris. Når arket er udfyldt, laver du "
                     "etiketterne i Label Printer (se dens egen vejledning).",
                     SMALL,
                 ),
@@ -720,8 +728,8 @@ def build_story(export_rows):
         TITLE["ret"],
         "ret",
         "Bagefter",
-        "Opdager du en fejl, når alt er gennemset: <b>dobbeltklik på rækken</b> i "
-        "listen. Så åbner den i et vindue for sig.",
+        "Opdager du en fejl, når alt er gennemset, så <b>dobbeltklik på rækken</b> i "
+        "listen. Den åbner i et vindue for sig.",
     )
     img_w = 570
     s.append(
@@ -732,10 +740,10 @@ def build_story(export_rows):
                     [
                         (
                             1,
-                            "<b>Gem ændringer:</b> gemmer rettelsen – Excel-filen bliver opdateret med det "
-                            "samme.",
+                            "<b>Gem ændringer</b> gemmer rettelsen, og Excel-filen bliver opdateret med "
+                            "det samme.",
                         ),
-                        (2, "<b>Luk</b> uden at gemme (har du rettet noget, bliver du spurgt)."),
+                        (2, "<b>Luk</b> lukker uden at gemme. Har du rettet noget, bliver du spurgt først."),
                     ],
                     W - img_w - GAP,
                 ),
@@ -750,8 +758,9 @@ def build_story(export_rows):
         TITLE["indstillinger"],
         "indstillinger",
         "Indstillinger",
-        "Klik på <b>⚙</b> øverst til venstre på startskærmen. Ændringerne gemmes med det samme og "
-        "huskes til næste gang.",
+        "Klik på <b>⚙</b> øverst til venstre på startskærmen. Indstillingerne vises i det samme "
+        "vindue, og med pilen <b>←</b> (eller Esc) kommer du tilbage. Ændringer gemmes med det samme "
+        "og huskes til næste gang. I parentes står, om indstillingen fra starten er slået til eller fra.",
     )
     img_w = 330
     s.append(
@@ -762,38 +771,46 @@ def build_story(export_rows):
                     [
                         (
                             1,
-                            "<b>Gem Excel-filen automatisk</b> (slået til): filen gemmes, når alle labels "
-                            "er gennemset. Slået fra gemmes ingen fil – brug <b>Kopiér resultat</b>.",
+                            "<b>Gem Excel-filen automatisk</b> (til): filen gemmes, når alle labels er "
+                            "gennemset. Slår du den fra, gemmes der ingen fil – brug så "
+                            "<b>Kopiér resultat</b>.",
                         ),
                         (
                             2,
-                            "<b>Gem i:</b> som standard ved billederne, dvs. i samme mappe som ZIP-filen. "
-                            "<b>Vælg mappe…</b> for en fast mappe, fx et fælles drev; <b>✕</b> skifter "
-                            "tilbage. Findes mappen ikke, gemmes filen ved billederne.",
+                            "<b>Gem i:</b> filen gemmes i samme mappe som ZIP-filen. Med "
+                            "<b>Vælg mappe…</b> kan du vælge en fast mappe, fx et fælles drev, og "
+                            "<b>✕</b> skifter tilbage. Findes mappen ikke, gemmes filen ved ZIP-filen.",
                         ),
                         (
                             3,
-                            "<b>Åbn Excel-filen, når den er gemt</b> (slået fra): åbner filen første gang, "
-                            "den gemmes. Luk den i Excel, før du retter en label bagefter – ellers kan "
-                            "den ikke gemmes igen.",
+                            "<b>Åbn Excel-filen, når den er gemt</b> (fra): filen åbnes, første gang den "
+                            "gemmes. Luk den i Excel, før du retter en label bagefter – ellers kan den "
+                            "ikke gemmes igen.",
                         ),
                         (
                             4,
-                            "<b>Brug labelens Antal som STK</b> (slået fra): hvert billede tæller som "
-                            "labelens Antal i stedet for 1 – til når der tages ét billede pr. label.",
+                            "<b>Brug labelens Antal som STK</b> (fra): hvert billede tæller som labelens "
+                            "Antal i stedet for 1. Brug den, når I tager ét billede pr. label. Feltet "
+                            "Antal vises kun i gennemse-vinduet, når indstillingen er slået til.",
                         ),
                         (
                             5,
-                            "<b>Husk valgte varer</b> (slået til): en vare, du vælger til en label, "
-                            "foreslås først næste gang. <b>Glem alle</b> sletter de huskede valg.",
+                            "<b>Slå varer op på hjemmesiden automatisk</b> (til): programmet finder pris "
+                            "og link, mens billederne læses. Slår du den fra, bruges hjemmesiden ikke, og "
+                            "labels får ingen pris. Knappen <b>Søg på hjemmesiden igen</b> virker stadig.",
                         ),
-                        (6, "<b>Mørkt udseende</b> (slået til): slå fra for lyst udseende."),
+                        (
+                            6,
+                            "<b>Husk valgte varer</b> (til): en vare, du vælger til en label, foreslås "
+                            "først næste gang. <b>Glem alle</b> sletter de huskede valg.",
+                        ),
+                        (7, "<b>Mørkt udseende</b> (til): slå den fra for et lyst udseende."),
                     ],
                     W - img_w - GAP,
                 ),
                 note(
-                    "Hold musen over <b>?</b> ved en indstilling for en forklaring. Indstillingerne "
-                    "kan kun ændres på startskærmen – før billederne vælges."
+                    "Hold musen over <b>?</b> ved en indstilling for at se en forklaring. "
+                    "Indstillingerne kan kun ændres på startskærmen, før du vælger billederne."
                 ),
             ],
             img_w,
@@ -806,7 +823,7 @@ def build_story(export_rows):
         TITLE["regler"],
         "regler",
         "Regler",
-        "En label bliver kun godkendt uden dig, når programmet er helt sikkert. Ellers "
+        "En label bliver kun godkendt uden dig, når programmet er helt sikker. Ellers "
         "havner den i Gennemse.",
     )
     half = (W - GAP) / 2
@@ -817,16 +834,21 @@ def build_story(export_rows):
                 colour_table(
                     ["Krav", "Ellers"],
                     [
-                        ["Alle fire felter er læst", "nummer, navn, MK-ordrenummer, stand"],
-                        ["STAND er A, B eller C", "»AP« → Gennemse"],
-                        ["Nummeret findes på hjemmesiden", "leverandørnummer → Gennemse"],
                         [
-                            "Nummeret er én udgave (fx farve), og <i>alle</i> ord på labelen passer til den",
+                            "Alle felter er læst: nummer, navn, MK-ordrenummer og stand (og Antal på "
+                            "den nye label)",
+                            "et felt mangler → Gennemse",
+                        ],
+                        ["STAND er A, B eller C", "fx »AP« → Gennemse"],
+                        ["Nummeret findes på hjemmesiden", "fx et leverandørnummer → Gennemse"],
+                        [
+                            "Nummeret hører til én bestemt udgave (fx en farve), og <i>alle</i> ord på "
+                            "labelen passer til den",
                             "navnet passer ikke (fx en tysk label) → Gennemse",
                         ],
                         [
-                            "Delvis vare (»1/2«, »2/2«): det samme",
-                            "men aldrig pris – <i>OBS: delvis vare</i>",
+                            "Delvis vare (»1/2«, »2/2«): de samme krav",
+                            "men aldrig en pris – <i>OBS: delvis vare</i>",
                         ],
                     ],
                     [half * 0.55, half * 0.45],
@@ -848,7 +870,7 @@ def build_story(export_rows):
                         ["Håndskrift, fx »1stk«", "Ignoreres."],
                         ["Andre klistermærker og tekst på kassen", "Ignoreres – kun selve labelen læses."],
                         ["Tekst under STAND, fx »(forkert vare sendt)«", "Ignoreres."],
-                        ["»|« og små stavefejl fra læsningen", "Tåles, når varen findes."],
+                        ["»|« og små stavefejl fra læsningen", "Gør ikke noget, når varen bliver fundet."],
                     ],
                     [half * 0.5, half * 0.5],
                     ("neutral", "accent"),
@@ -864,8 +886,8 @@ def build_story(export_rows):
             ["OK", "Gennemse", "Fejl"],
             [
                 [
-                    "Godkendt af sig selv. Er klar til Excel.",
-                    "Programmet er i tvivl. Tryk <b>Gennemse labels</b> og svar på spørgsmålet.",
+                    "Godkendt automatisk og klar til Excel.",
+                    "Programmet er i tvivl. Tryk på <b>Gennemse labels</b>, og svar på spørgsmålet.",
                     "Billedet kunne ikke læses. Læs billedet igen, eller skriv felterne selv.",
                 ]
             ],
@@ -881,12 +903,12 @@ def build_story(export_rows):
         [
             "Vinduet med labels dukker ikke op",
             "Det åbner først, når du beder om det.",
-            "Tryk <b>Gennemse labels</b>.",
+            "Tryk på <b>Gennemse labels</b>.",
         ],
         [
             "Jeg lukkede gennemse-vinduet med ✕",
-            "Din plads er gemt.",
-            "Tryk <b>Gennemse labels</b> – du fortsætter samme sted.",
+            "Programmet husker, hvor du var.",
+            "Tryk på <b>Gennemse labels</b> – du fortsætter, hvor du slap.",
         ],
         [
             "Excel-filen er ikke gemt",
@@ -900,8 +922,10 @@ def build_story(export_rows):
         ],
         [
             "»Kunne ikke søge på hjemmesiden«",
-            "Ingen internetforbindelse – eller hjemmesiden afviste programmet et øjeblik.",
-            "Tjek forbindelsen, vent et minut, og tryk <b>Søg på hjemmesiden igen</b>.",
+            "Ingen internetforbindelse, eller hjemmesiden afviste programmet et øjeblik. Står der "
+            "»Permission denied«, blokerer et antivirusprogram eller en firewall Label Miner.",
+            "Tjek forbindelsen, vent et minut, og tryk på <b>Søg på hjemmesiden igen</b>. Ved "
+            "»Permission denied«: tillad Label Miner i antivirusprogrammet eller firewallen.",
         ],
         [
             "Prisen mangler",
@@ -916,7 +940,7 @@ def build_story(export_rows):
         [
             "Rækkerne havnede i de forkerte kolonner i Google Sheets",
             "Der var ikke klikket i kolonne A, før der blev sat ind.",
-            f"Fortryd (Ctrl+Z), klik i kolonne A og sæt ind igen. {link('trin5', 'Se trin 5')}",
+            f"Fortryd (Ctrl+Z), klik i kolonne A, og sæt ind igen. {link('trin5', 'Se trin 5')}",
         ],
         [
             "Mange labels skal gennemses",
@@ -944,7 +968,7 @@ def build_story(export_rows):
         TITLE["installation"],
         "installation",
         "Til nye computere",
-        "Programmet installeres med én fil: <b>Label-Miner-Setup.exe</b> (ca. 650 MB). "
+        "Programmet installeres med én fil: <b>Label-Miner-Setup.exe</b> (ca. 130 MB). "
         "Der skal ikke installeres andet.",
     )
     half = (W - GAP) / 2
@@ -957,9 +981,9 @@ def build_story(export_rows):
                         (1, "Dobbeltklik på <b>Label-Miner-Setup.exe</b>."),
                         (
                             2,
-                            "Siger Windows »Windows beskyttede din pc«, så klik <b>Flere oplysninger</b> og "
-                            "derefter <b>Kør alligevel</b>. Advarslen kommer, fordi programmet er lavet til "
-                            "butikken og ikke købt i en butik – det er normalt.",
+                            "Siger Windows »Windows beskyttede din pc«, så klik på <b>Flere oplysninger</b> "
+                            "og derefter på <b>Kør alligevel</b>. Advarslen kommer, fordi programmet er "
+                            "lavet specielt til butikken og ikke er købt færdigt. Det er helt normalt.",
                         ),
                         (3, "Klik dig gennem installationen. Der kræves ikke administrator-adgangskode."),
                         (

@@ -86,13 +86,17 @@ class LabelDesign(ABC):
         The STAND value is kept as printed even if it isn't A/B/C (e.g.
         "AP"), so the user sees what the label says."""
 
-    def warnings(self, label: Label, keywords_missing: bool) -> list[Warning]:
+    def warnings(self, label: Label, keywords_missing: bool, use_antal: bool = True) -> list[Warning]:
         """Warnings about the label text itself (the webshop lookup adds its
-        own, and decides whether only part of an item needs a look)."""
+        own, and decides whether only part of an item needs a look).
+
+        ``use_antal``: whether the label's Antal is used ("Brug labelens Antal
+        som STK"). When it isn't, an Antal that can't be read doesn't matter -
+        and the review window doesn't even show the field."""
         warnings = [
             ("missing", f"Kunne ikke læse {name}")
             for key, name in MISSING_FIELD_NAMES.items()
-            if key in self.fields and not getattr(label, key)
+            if key in self.fields and not getattr(label, key) and (use_antal or key != "antal")
         ]
         if keywords_missing:
             warnings.append(("partial", self.keywords_message))
@@ -253,8 +257,15 @@ class LeftAlignedDesign(LabelDesign):
             header = text[varenr.end() : max(header_end, varenr.end())].strip()
             label.mk_varenummer, label.varenavn = number_and_name(header)
         if ordre_nr is not None:
-            order_number = text[ordre_nr.end() : max(bottom_line, ordre_nr.end())]
-            label.mk_ordrenr = clean_order_number(order_number)
+            order_text = clean_order_number(text[ordre_nr.end() : max(bottom_line, ordre_nr.end())])
+            # The order number is printed alone in its box: the first word(s)
+            # in an order number's form, whatever the OCR read after it - an
+            # "Antal" misread past recognising ("Atal: 1") would otherwise end
+            # up in it. Anything else is kept whole, to be checked.
+            order_number = VALID_ORDER_NUMBER_RE.match(order_text)
+            if order_number is not None and order_text[order_number.end() :][:1] in ("", " "):
+                order_text = order_number.group()
+            label.mk_ordrenr = order_text
         if stand is not None and stand["stand"]:
             label.stand = stand["stand"].upper()
         if antal is not None:
@@ -267,10 +278,11 @@ class LeftAlignedDesign(LabelDesign):
 
         label.part = item_part(label.mk_varenummer, label.varenavn)
         # Each word exactly once: twice means two labels were read as one (stacked
-        # or side by side), and the second one would be lost
+        # or side by side), and the second one would be lost. Not Antal: two
+        # labels show in the other three words too, and an Antal that matters
+        # but can't be read is a missing field already (see warnings)
         keywords_missing = any(
-            len(word.findall(text)) != 1
-            for word in (self.VARENR_RE, self.ORDRE_NR_RE, self.ANTAL_RE, STAND_RE)
+            len(word.findall(text)) != 1 for word in (self.VARENR_RE, self.ORDRE_NR_RE, STAND_RE)
         )
         return label, keywords_missing
 

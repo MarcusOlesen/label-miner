@@ -34,6 +34,18 @@ def test_a_line_split_in_two_pieces_is_joined():
     assert label_text(pieces) == "102162, Roots skænk, 132x75 Natur egetræe OUTLET 152416 STAND: B"
 
 
+def test_a_large_number_under_a_line_is_not_joined_to_it():
+    # 17-11/IMG_1260.JPG: a part's long item number, printed large right under
+    # "OUTLET · VARENR.", reaches up into that line - level with it, but lying
+    # under it, not next to it. Joined, the number came first and was lost.
+    pieces = [
+        ("OUTLET·VARENR.", [[70, 566], [630, 588], [627, 651], [67, 629]]),
+        ("101935_2/3", [[51, 612], [955, 631], [951, 846], [47, 827]]),
+        ("2/3 Lyon U-sofa, venstrevendt -Aragon Beige", [[75, 818], [1547, 866], [1543, 965], [71, 917]]),
+    ]
+    assert [block.text for block in blocks_of(pieces)] == [text for text, _ in pieces]
+
+
 def test_tilted_print_on_the_box_is_not_part_of_the_label():
     # 27-10/IMG_0843.HEIC: "sniseborus" runs at about 30 degrees to the label,
     # and its upright box overlaps the label, centred on it

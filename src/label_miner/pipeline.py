@@ -13,7 +13,14 @@ from .util import debug_log
 
 
 def extract_label(
-    engine, image_path: Path, session, cache: dict, cache_lock: Lock, choices: dict | None = None
+    engine,
+    image_path: Path,
+    session,
+    cache: dict,
+    cache_lock: Lock,
+    choices: dict | None = None,
+    shop_lookup: bool = True,
+    use_antal: bool = True,
 ) -> Record:
     """Read one label photo and find its product.
 
@@ -27,7 +34,11 @@ def extract_label(
     on up to OCR_WORKERS threads at once, sharing one engine and one webshop
     cache (guarded by cache_lock). ``choices`` are the user's remembered
     choices (see choices.py): a label that goes to review gets its
-    remembered product as the first suggestion.
+    remembered product as the first suggestion. With ``shop_lookup`` off
+    the webshop isn't asked at all: the label is only read, with no price,
+    link or suggestions - and goes to review only for what the label itself
+    lacks. ``use_antal`` is "Brug labelens Antal som STK": off, an Antal that
+    can't be read sends no label to review (see LabelDesign.warnings).
     """
     image = load_label_photo(image_path)
     blocks = read_text_blocks(engine, image)
@@ -56,7 +67,11 @@ def extract_label(
     record = Record(image_path, raw_text=text, label=label, design=design.name, photo_turn=turn)
     if label_blocks is not blocks and label_blocks:
         record.label_box = label_box(label_blocks, image.size)
-    record.warnings = design.warnings(label, keywords_missing)
+    record.warnings = design.warnings(label, keywords_missing, use_antal)
+    if not shop_lookup:
+        if label.part:
+            record.price = part_note(label.part)
+        return record
 
     shop_result, shop_warnings = look_up_product(
         session, cache, cache_lock, label.mk_varenummer, label.varenavn, label.part

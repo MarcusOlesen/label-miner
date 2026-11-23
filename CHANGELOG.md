@@ -6,6 +6,38 @@
   Google Sheets: the rest of the name landed in column A and every column after it moved one to
   the left. Fields now turn a pasted line break or tab into a space, and every cell of the export
   is kept on one line whatever its source.
+- The pause between the pages of the shop's product list is a random 1.5-3.5 seconds instead of
+  exactly two, so the downloads don't arrive at a fixed rhythm.
+- The settings are a page of the main window instead of a window of their own: the ⚙ on the start
+  screen shows them in place, and the back arrow (or Esc) returns.
+- New setting, "Slå varer op på hjemmesiden automatisk" (on): off, the webshop isn't asked while the
+  photos are read. Labels get no price, link or suggestions, and only go to review for what the
+  label itself lacks. "Søg på hjemmesiden igen" in the review window still works.
+- The review window only shows Antal when "Brug labelens Antal som STK" is on; otherwise it isn't
+  used, and its value is kept as read.
+- Less stutter. While a batch is read, each of the three OCR workers used every core of the PC, so
+  the window hardly got a turn; now each gets its share, with one core left over (the same
+  fields, and on 12 test photos a little faster). The review window draws the photo from a
+  screen-sized copy instead of the full 12-megapixel photo, and draws once when the window is
+  resized or the rotation slider dragged, not for every step.
+- Fix: on a part of an item in the new design ("101935_2/3"), the item number could be lost. The
+  long number is printed large right under "OUTLET · VARENR." and reaches up into that line, so
+  the OCR's pieces were joined as one line with the number first, where it isn't looked for. Two
+  pieces are now only one line when they sit side by side, never on top of each other. Tested on
+  all 243 label photos: the two labels from 17/11 that lost their number are read right, and
+  nothing else changes.
+- Fix: with "Brug labelens Antal som STK" off, a new label whose Antal couldn't be read still went
+  to review ("Nogle felter kunne ikke læses: antallet") - for a field that isn't used, and that the
+  review window doesn't show. Antal now only matters when the setting is on. The word Antal is no
+  longer one of the words used to tell two labels in one photo (the other three tell that), and
+  the order number is the number after ORDRE NR. - a misread "Antal" after it ("151153 Atal: 1")
+  no longer makes it look unusual.
+- A part of an item is written "OBS: delvis vare (1/2)" instead of "(del 1/2)" - in the export,
+  the review window's question and its warning.
+- `tools/run_label_tests.py --labels-only` checks how every real label photo is read, without the
+  webshop, against an answer key in `data/labels/` (see the README).
+- The tests' windows are invisible, so a test run doesn't flash windows across the screen
+  (LABEL_MINER_SHOW_WINDOWS=1 shows them).
 
 ## 2.5 - 2026-11-17
 - The webshop no longer blocks a batch. The shop's search allows a short burst and then about one

@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 
-from .config import MAX_IMAGE_SIDE
+from .config import MAX_IMAGE_SIDE, OCR_WORKERS
 from .designs import design_of
 from .geometry import TextBlock, axes, direction_of, dot, parallel, span, turned_clockwise
 from .parsing import LABEL_NUMBER_RE, OUTLET_RE, STAND_RE, WHITESPACE_RE
@@ -31,10 +31,23 @@ def create_ocr_engine():  # -> rapidocr.RapidOCR
     The models ship inside the rapidocr package, so the app never downloads
     anything, and the pinned rapidocr version fixes which models (and so
     which results) it gets.
+
+    OCR_WORKERS photos are read at once, and onnxruntime would give each of
+    them every core of the PC - several times more threads than cores, which
+    made the whole program (the window too) stutter while a batch was read.
+    So each gets its share of the cores, leaving one for the window.
     """
     from rapidocr import RapidOCR
 
-    return RapidOCR(params={"Global.log_level": "warning"})
+    cores = os.cpu_count() or 2
+    threads = max(1, (cores - 1) // OCR_WORKERS)
+    return RapidOCR(
+        params={
+            "Global.log_level": "warning",
+            "EngineConfig.onnxruntime.intra_op_num_threads": threads,
+            "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+        }
+    )
 
 
 def load_label_photo(image_path: Path) -> Image.Image:
@@ -110,8 +123,17 @@ def read_text_blocks(engine, image: Image.Image) -> list[TextBlock]:
 
 def _same_line(points, other_points) -> bool:
     """Whether two pieces are parts of one printed line: parallel, level
-    with each other, and no more than a word space (half a line height)
-    apart."""
+    with each other, and side by side - no more than a word space (half a
+    line height) apart, and not on top of each other.
+
+    "Level" only asks that the pieces overlap by half the smaller one's
+    height: on a curved label the end of a line can sit a little higher
+    than its start. So a tall piece right below a short line can count as
+    level with it too - the new design's large item number under "OUTLET ·
+    VARENR." when the number is long ("101935_2/3"). Pieces of one line
+    never lie on top of each other, though, so those overlap along the
+    line by far more than a little (half a line height, for boxes that
+    touch)."""
     direction = direction_of(points)
     if not parallel(direction, direction_of(other_points)):
         return False
@@ -122,7 +144,7 @@ def _same_line(points, other_points) -> bool:
     line_height = min(bottom - top, other_bottom - other_top)
     level = min(bottom, other_bottom) - max(top, other_top) >= line_height / 2
     gap = max(other_start - end, start - other_end)
-    return level and gap <= line_height / 2
+    return level and -line_height / 2 <= gap <= line_height / 2
 
 
 def label_blocks_in_reading_order(blocks: list[TextBlock]) -> tuple[list[TextBlock], int]:

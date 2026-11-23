@@ -212,10 +212,13 @@ def steps(s, out, result):
         ),
     )
 
-    # 1b. The settings window ------------------------------------------------------
-    window = app.open_settings()
+    # 1b. The settings: a page of the main window, photographed with the
+    # window narrowed to the settings' own column ------------------------------
+    full_size = s.root.geometry()
+    s.root.geometry(f"{d(600)}x{d(640)}")
+    app.open_settings()
     yield 600
-    img = s.shot(window)
+    img = s.shot()
     rows = app.settings_rows
     save(
         "15_indstillinger",
@@ -227,12 +230,14 @@ def steps(s, out, result):
                 (2, left_of(s.box(app.folder_text), d(22))),
                 (3, left_of(s.box(rows["open_excel"][1]), d(24))),
                 (4, left_of(s.box(rows["stk_from_antal"][1]), d(24))),
-                (5, left_of(s.box(rows["remember_choices"][1]), d(24))),
-                (6, left_of(s.box(rows["appearance"][1]), d(24))),
+                (5, left_of(s.box(rows["shop_lookup"][1]), d(24))),
+                (6, left_of(s.box(rows["remember_choices"][1]), d(24))),
+                (7, left_of(s.box(rows["appearance"][1]), d(24))),
             ],
         ),
     )
-    window.destroy()
+    app.close_settings()
+    s.root.geometry(full_size)
     yield 300
 
     # 2. Reading: taken while the batch is still being worked on ---------------

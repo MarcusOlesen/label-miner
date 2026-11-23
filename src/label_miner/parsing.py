@@ -72,7 +72,7 @@ def part_note(part: str) -> str:
     """The comment a part of an item gets instead of a price. It keeps the
     export clear even if the "1/2" disappears from the name (e.g. when the
     shop's name is picked in the review window)."""
-    return f"OBS: delvis vare (del {part})"
+    return f"OBS: delvis vare ({part})"
 
 
 def item_part(mk_varenummer: str, varenavn: str) -> str:

@@ -181,7 +181,11 @@ def test_the_pages_are_asked_for_with_a_pause_between(no_waiting_for_the_shop, m
 
     catalogue = shop.download_catalogue(Paged())
     assert len(catalogue.products) == 85
-    assert no_waiting_for_the_shop == [shop.CATALOGUE_PAGE_PAUSE] * 2
+    # A random pause in the range before each later page, not the same every time
+    low, high = shop.CATALOGUE_PAGE_PAUSE
+    assert len(no_waiting_for_the_shop) == 2
+    assert all(low <= pause <= high for pause in no_waiting_for_the_shop)
+    assert len(set(no_waiting_for_the_shop)) == 2
 
 
 def test_the_catalogue_is_downloaded_again_when_an_hour_old(monkeypatch):

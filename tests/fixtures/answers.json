@@ -574,5 +574,31 @@
   "expect": "auto",
   "design": "new",
   "note": "order number is the word Lager"
+ },
+ "17-11/IMG_1260.JPG": {
+  "mk_varenummer": "101935_2/3",
+  "varenavn": "2/3 Lyon U-sofa, venstrevendt - Aragon Beige",
+  "mk_ordrenr": "109170",
+  "stand": "B",
+  "antal": "1",
+  "shop": "unknown",
+  "expect": "review",
+  "reason": "part of an item, not on the recorded shop list",
+  "design": "new",
+  "note": "the long item number is printed large, right under OUTLET · VARENR."
+ },
+ "17-11/IMG_1261.JPG": {
+  "mk_varenummer": "101408_2/2",
+  "varenavn": "2/2 Paris hjoernesofa, venstrevendt, Modesto Brun",
+  "mk_ordrenr": "143645",
+  "stand": "B",
+  "antal": "1",
+  "shop": {
+   "handle": "paris-hjornesofa-venstrevendt",
+   "variant": 48735910494545
+  },
+  "expect": "auto",
+  "design": "new",
+  "note": "the long item number is printed large, right under OUTLET · VARENR."
  }
 }

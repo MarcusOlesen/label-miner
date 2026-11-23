@@ -116,6 +116,7 @@ class LabelMinerApp:
         self.choices = load_choices()
         # The settings window's switches (see settings.DEFAULTS, _save_settings)
         self.stk_from_antal = tk.BooleanVar(value=self.settings["stk_from_antal"])
+        self.shop_lookup = tk.BooleanVar(value=self.settings["shop_lookup"])
         self.save_excel = tk.BooleanVar(value=self.settings["save_excel"])
         self.export_folder = tk.StringVar(value=self.settings["export_folder"])
         self.open_excel = tk.BooleanVar(value=self.settings["open_excel"])
@@ -216,7 +217,7 @@ class LabelMinerApp:
         # the export is made from them (see open_settings)
         self.settings_button = self._settings_icon(self.select_frame)
         self.settings_button.place(relx=0.0, rely=0.0, anchor="nw")
-        self.settings_window = None
+        self.settings_frame = None
 
         drop_targets = [self.select_frame, center, self.select_button]
         if DND_FILES is not None:
@@ -257,6 +258,13 @@ class LabelMinerApp:
             "Slået fra: der gemmes ingen fil. Brug »Kopiér resultat«, og sæt rækkerne ind i "
             "Google Sheets."
         ),
+        "shop_lookup": (
+            "Mens billederne læses, finder programmet hver labels vare på hjemmesiden og "
+            "udfylder pris og link.\n\n"
+            "Slået fra: hjemmesiden bruges ikke. Labels læses kun, uden pris, og kommer kun til "
+            "gennemgang, hvis noget på selve labelen mangler. I gennemgangen kan du stadig trykke "
+            "»Søg på hjemmesiden igen«."
+        ),
         "remember_choices": (
             "Når du vælger en vare fra hjemmesiden til en label, husker programmet valget. Næste "
             "gang en label med samme nummer og navn skal gennemgås, står varen øverst og er valgt "
@@ -291,31 +299,56 @@ class LabelMinerApp:
         return self._icon(parent, "\ue713", "⚙", 15, command=self.open_settings)
 
     def open_settings(self):
-        """The ⚙ button: a small window with the settings, each saved as
-        soon as it is changed (see settings.py). Returns the window."""
-        if self.settings_window is not None and self.settings_window.winfo_exists():
-            self.settings_window.deiconify()
-            self.settings_window.lift()
-            return self.settings_window
-        window = tk.Toplevel(self.root)
-        window.title("Indstillinger")
-        window.resizable(False, False)
-        window.transient(self.root)
-        set_window_icon(window)
-        frame = ttk.Frame(window, padding=(22, 18, 22, 18))
-        frame.pack(fill="both", expand=True)
-        frame.columnconfigure(2, weight=1, minsize=40)
-        ttk.Label(frame, text="Indstillinger", font=(DEFAULT_FONT_FAMILY, 14, "bold")).grid(
-            row=0, column=0, columnspan=4, sticky="w"
+        """The ⚙ button: the settings as a page of the main window, in place
+        of the start screen, with a back arrow (or Esc) to return - like the
+        settings of a Windows app, not a window of their own. Each setting is
+        saved as soon as it is changed (see settings.py). Returns the page."""
+        if self.settings_frame is None:
+            self._build_settings_page()
+        self.select_frame.pack_forget()
+        self.settings_frame.pack(fill="both", expand=True)
+        self._update_settings_window()
+        self.settings_frame.focus_set()
+        self.root.bind("<Escape>", lambda event: self.close_settings(), add="+")
+        return self.settings_frame
+
+    def close_settings(self):
+        """Back from the settings page to the start screen."""
+        if self.settings_frame is None or not self.settings_frame.winfo_ismapped():
+            return
+        self.settings_frame.pack_forget()
+        self.select_frame.pack(fill="both", expand=True)
+
+    @property
+    def settings_open(self):
+        return self.settings_frame is not None and self.settings_frame.winfo_ismapped()
+
+    def _build_settings_page(self):
+        page = ttk.Frame(self.screen_container)
+        self.settings_frame = page
+        header = ttk.Frame(page)
+        header.pack(fill="x")
+        back = self._icon(header, "\ue72b", "←", 15, command=self.close_settings)
+        back.pack(side="left")
+        Tooltip(back, "Tilbage (Esc)")
+        self.settings_back = back
+        ttk.Label(header, text="Indstillinger", font=(DEFAULT_FONT_FAMILY, 18, "bold")).pack(
+            side="left", padx=(10, 0)
         )
+        # One column of settings, as wide as it needs - centred, rather than
+        # stretched across a wide window
+        frame = ttk.Frame(page, padding=(0, 6, 0, 0))
+        frame.pack(anchor="n", pady=(4, 0))
+        frame.columnconfigure(0, minsize=300)
+        frame.columnconfigure(2, weight=1, minsize=40)
         self.settings_rows = {}
         self.settings_tooltips = {}
-        rows = iter(range(1, 100))
+        rows = iter(range(0, 100))
 
         def section(title):
             ttk.Label(
                 frame, text=title.upper(), font=(DEFAULT_FONT_FAMILY, 9, "bold"), foreground=COLOR_MUTED
-            ).grid(row=next(rows), column=0, columnspan=4, sticky="w", pady=(18, 2))
+            ).grid(row=next(rows), column=0, columnspan=4, sticky="w", pady=(16, 2))
 
         def setting(key, text, variable):
             """One setting: its name, a ? with what it does (see HELP), and a
@@ -361,6 +394,7 @@ class LabelMinerApp:
         setting("stk_from_antal", "Brug labelens Antal som STK", self.stk_from_antal)
 
         section("Gennemgang")
+        setting("shop_lookup", "Slå varer op på hjemmesiden automatisk", self.shop_lookup)
         setting("remember_choices", "Husk valgte varer", self.remember_choices)
         row = next(rows)
         self.choices_count = ttk.Label(frame, foreground=COLOR_MUTED)
@@ -370,17 +404,6 @@ class LabelMinerApp:
 
         section("Udseende")
         setting("appearance", "Mørkt udseende", self.dark_appearance)
-
-        ttk.Separator(frame).grid(row=next(rows), column=0, columnspan=4, sticky="ew", pady=(16, 14))
-        ttk.Button(frame, text="Luk", command=window.destroy).grid(row=next(rows), column=3, sticky="e")
-        self._update_settings_window()
-        window.update_idletasks()
-        # Next to the ⚙ it was opened from
-        x = self.root.winfo_rootx() + 40
-        y = self.root.winfo_rooty() + 40
-        window.geometry(f"+{x}+{y}")
-        self.settings_window = window
-        return window
 
     def _update_settings_window(self):
         """Show the settings window's details as the settings are now: the
@@ -413,7 +436,7 @@ class LabelMinerApp:
         self._save_settings()
         if appearance_changed:
             self._apply_appearance()
-        if self.settings_window is not None and self.settings_window.winfo_exists():
+        if self.settings_frame is not None:
             self._update_settings_window()
 
     def _apply_appearance(self):
@@ -436,7 +459,7 @@ class LabelMinerApp:
 
     def _choose_export_folder(self):
         folder = filedialog.askdirectory(
-            parent=self.settings_window, title="Gem Excel-filen i", mustexist=True
+            parent=self.root, title="Gem Excel-filen i", mustexist=True
         )
         if folder:
             self.export_folder.set(str(Path(folder)))
@@ -452,7 +475,7 @@ class LabelMinerApp:
             "Glem husket valg?",
             f"Programmet har husket {count} {'vare' if count == 1 else 'varer'} til labels. "
             "Vil du glemme dem alle? Det kan ikke fortrydes.",
-            parent=self.settings_window,
+            parent=self.root,
         ):
             self.choices.clear()
             save_choices(self.choices)
@@ -476,6 +499,7 @@ class LabelMinerApp:
 
     def _save_settings(self):
         self.settings["stk_from_antal"] = self.stk_from_antal.get()
+        self.settings["shop_lookup"] = self.shop_lookup.get()
         self.settings["save_excel"] = self.save_excel.get()
         self.settings["export_folder"] = self.export_folder.get()
         self.settings["open_excel"] = self.open_excel.get()
@@ -698,8 +722,8 @@ class LabelMinerApp:
         # The select screen is consumed for good here - this app processes
         # one batch per launch, so the button never needs to come back.
         # Nor do the settings: the batch is made with them as they are now.
-        if self.settings_window is not None and self.settings_window.winfo_exists():
-            self.settings_window.destroy()
+        if self.settings_frame is not None:
+            self.settings_frame.pack_forget()
         self.select_frame.pack_forget()
         self.work_frame.pack(fill="both", expand=True)
         self._start_processing()
@@ -721,7 +745,8 @@ class LabelMinerApp:
         self._start_busy_indicator()
         # The webshop's catalogue is downloaded alongside the first photos'
         # OCR - its own thread, which gets there first and says how it goes
-        threading.Thread(target=self._prefetch_catalogue, daemon=True).start()
+        if self.settings["shop_lookup"]:
+            threading.Thread(target=self._prefetch_catalogue, daemon=True).start()
         threading.Thread(target=self._process_in_background, daemon=True).start()
 
     def _prefetch_catalogue(self):
@@ -751,6 +776,8 @@ class LabelMinerApp:
                 self.price_cache,
                 self.price_cache_lock,
                 self.active_choices,
+                self.settings["shop_lookup"],
+                self.settings["stk_from_antal"],
             )
         except Exception as error:
             record = Record(path, warnings=[("error", f"Behandling af billedet fejlede: {error}")])
@@ -1199,6 +1226,8 @@ class LabelMinerApp:
                 self.price_cache,
                 self.price_cache_lock,
                 self.active_choices,
+                self.settings["shop_lookup"],
+                self.settings["stk_from_antal"],
             )
             record.take_reading(reading)
             record.working_image = working_image

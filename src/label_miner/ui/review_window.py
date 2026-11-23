@@ -33,6 +33,14 @@ class ReviewWindow:
     """
 
     THUMBNAIL_SIZE = 72
+    # The photo is drawn from a copy no larger than this (pixels) - a phone
+    # photo is 12 megapixels, and scaling that down for every redraw made
+    # resizing the window and dragging the rotation slider stutter
+    PREVIEW_MAX_SIDE = 1600
+    # A redraw waits this long (ms), so a burst of events - a window being
+    # resized, the slider being dragged - draws once, not once per event
+    RESIZE_REDRAW_DELAY = 60
+    SLIDER_REDRAW_DELAY = 15
     # The webshop's "too many searches" message names this button (see shop._get_json)
     SEARCH_BUTTON_TEXT = "🔍  Søg på hjemmesiden igen"
 
@@ -98,6 +106,11 @@ class ReviewWindow:
         # see extract_label) - shown zoomed in on by default
         self.zoom_box = None
         self.zoomed = False
+        # The image as shown, made screen-sized once (see _preview_source),
+        # and a redraw waiting to happen (see _schedule_redraw)
+        self.preview_source = None
+        self.preview_source_key = None
+        self.pending_redraw = None
 
         self.image_canvas = tk.Canvas(
             self.image_frame,
@@ -105,7 +118,7 @@ class ReviewWindow:
             highlightthickness=0,
         )
         self.image_canvas.grid(row=0, column=0, sticky="nsew")
-        self.image_canvas.bind("<Configure>", self._resize_image)
+        self.image_canvas.bind("<Configure>", lambda event: self._schedule_redraw(self.RESIZE_REDRAW_DELAY))
         self.image_canvas.bind("<ButtonPress-1>", self._crop_start_event)
         self.image_canvas.bind("<B1-Motion>", self._crop_drag_event)
         self.image_canvas.bind("<ButtonRelease-1>", self._crop_release_event)
@@ -362,6 +375,22 @@ class ReviewWindow:
         entry.grid(row=row * 2 + 1, column=0, sticky="ew", pady=(0, 9))
         self.entries[key] = entry
         self.entry_labels[key] = (label_widget, label)
+
+    def _antal_counts(self):
+        """Whether the label's Antal is used: only with "Brug labelens Antal
+        som STK" on - otherwise every photo is one piece, and the field would
+        only be one more thing to check."""
+        return bool(self.app.settings.get("stk_from_antal"))
+
+    def _show_antal_field(self):
+        """The Antal field only while it counts (see _antal_counts). Hidden,
+        it keeps the value read from the label, unchanged."""
+        label_widget, _ = self.entry_labels["antal"]
+        for widget in (label_widget, self.entries["antal"]):
+            if self._antal_counts():
+                widget.grid()
+            else:
+                widget.grid_remove()
 
     def _mark_fields(self, fields):
         """Flag the entry fields the current question is about."""
@@ -712,6 +741,7 @@ class ReviewWindow:
         for key, entry in self.entries.items():
             entry.delete(0, tk.END)
             entry.insert(0, values[key])
+        self._show_antal_field()
         self.loaded_fields = self.read_fields()
         self.auto_price = self.loaded_fields["price"]
 
@@ -796,7 +826,41 @@ class ReviewWindow:
                 fill=self.text_color,
             )
 
+    def _schedule_redraw(self, delay):
+        """Redraw the photo after ``delay`` ms, replacing a redraw already
+        waiting - see RESIZE_REDRAW_DELAY."""
+        if self.pending_redraw is not None:
+            self.image_canvas.after_cancel(self.pending_redraw)
+        self.pending_redraw = self.image_canvas.after(delay, self._redraw_now)
+
+    def _redraw_now(self):
+        self.pending_redraw = None
+        if self.image_canvas.winfo_exists():  # not if the window closed meanwhile
+            self._resize_image()
+
+    def _preview_source(self):
+        """display_base(), at most PREVIEW_MAX_SIDE pixels - made once for
+        each photo, edit and zoom, and reused for every redraw."""
+        base = self.working_image or self.original_image
+        key = (base, self.zoomed, self.zoom_box)
+        cached = self.preview_source_key
+        if (
+            self.preview_source is None
+            or cached is None
+            or cached[0] is not base
+            or cached[1:] != key[1:]
+        ):
+            image = self.display_base().copy()
+            image.thumbnail((self.PREVIEW_MAX_SIDE, self.PREVIEW_MAX_SIDE), Image.Resampling.LANCZOS)
+            self.preview_source = image
+            self.preview_source_key = key
+        return self.preview_source
+
     def _resize_image(self, event=None):
+        if self.pending_redraw is not None:
+            # Drawn now: a redraw still waiting would only repeat it
+            self.image_canvas.after_cancel(self.pending_redraw)
+            self.pending_redraw = None
         if self.original_image is None:
             # <Configure> fires as soon as the canvas is created/resized -
             # including before _show_image() has loaded anything into
@@ -806,7 +870,7 @@ class ReviewWindow:
         try:
             width = max(self.image_frame.winfo_width() - 24, 100)
             height = max(self.image_frame.winfo_height() - 24, 100)
-            image = self.display_base().copy()
+            image = self._preview_source().copy()
             if self.rotation_angle:
                 # Shrink the thumbnail target first so the live-rotated
                 # preview (whose bounding box grows once it's off a right
@@ -882,7 +946,7 @@ class ReviewWindow:
             parent=self.window,
         ):
             return
-        if fields["antal"] and not fields["antal"].isdigit():
+        if self._antal_counts() and fields["antal"] and not fields["antal"].isdigit():
             messagebox.showwarning(
                 "Tjek Antal", "Antal skal være et tal, fx 2 – eller tomt.", parent=self.window
             )
@@ -979,7 +1043,7 @@ class ReviewWindow:
         self.rotation_angle = float(value)
         self.pending_crop_fraction = None
         self.rotation_label.configure(text=f"{round(self.rotation_angle)}°")
-        self._resize_image()
+        self._schedule_redraw(self.SLIDER_REDRAW_DELAY)
 
     def _rotate_quarter_turn(self, delta):
         """Nudge the rotation by a quick +/-90 degrees, wrapping into the

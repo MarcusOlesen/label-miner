@@ -12,9 +12,9 @@ def parse_label_fields(text):
     return design_of(text).parse(text)
 
 
-def label_warnings(text):
+def label_warnings(text, use_antal=True):
     design = design_of(text)
-    return design.warnings(*design.parse(text))
+    return design.warnings(*design.parse(text), use_antal)
 
 
 # (OCR text in reading order) -> (MK number, name, order number, STAND, part of item)
@@ -136,8 +136,25 @@ def test_new_design_without_antal_is_reviewed():
     text = "OUTLET·VARENR. 103469 Roots sofabord ORDRE NR. 156146 Stand: B"
     label, keywords_missing = parse_label_fields(text)
     assert label.antal == ""
-    assert keywords_missing
-    assert ("missing", "Kunne ikke læse antallet") in label_warnings(text)
+    assert not keywords_missing  # one label: Antal isn't needed to tell
+    assert label_warnings(text) == [("missing", "Kunne ikke læse antallet")]
+
+
+@pytest.mark.parametrize(
+    "antal",
+    [
+        "",  # not read at all
+        "Atal: 1",  # the word misread: a line printed through it
+        "Antal: l",  # the number misread
+    ],
+)
+def test_antal_only_matters_when_it_is_used(antal):
+    # A label whose Antal can't be read goes to review only with "Brug
+    # labelens Antal som STK" on - off, Antal isn't used, and the review
+    # window doesn't show it, so there would be nothing to fix
+    text = f"OUTLET·VARENR. 106843 Struct sofabord, 12x6 ORDRE NR. 151153 {antal} Stand: B"
+    assert ("missing", "Kunne ikke læse antallet") in label_warnings(text, use_antal=True)
+    assert label_warnings(text, use_antal=False) == []
 
 
 @pytest.mark.parametrize("antal", ["Antal: 1O", "Antal: 2 4", "Antal: l", "Antal: 0", "Antal:"])

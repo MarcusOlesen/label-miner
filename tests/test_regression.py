@@ -40,7 +40,7 @@ def test_part_of_item_confirmed_by_the_shop(pipeline_results):
     assert confirmed.warnings == []
     assert confirmed.label.varenavn == "Vega sofabord, travertin marmor | 90x90"
     assert "/products/vega-sofabord-travertin-marmor-90x90" in confirmed.url
-    assert confirmed.price == "OBS: delvis vare (del 1/2)"
+    assert confirmed.price == "OBS: delvis vare (1/2)"
     unconfirmed = pipeline_results["24-9/IMG_0283.HEIC"]
     assert "part" in {category for category, _ in unconfirmed.warnings}
 

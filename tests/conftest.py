@@ -1,5 +1,7 @@
 import json
+import os
 import threading
+import tkinter as tk
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,34 @@ import pytest
 from harness import CachedOcrEngine, CachedSession
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture(autouse=True, scope="session")
+def invisible_windows():
+    """The UI tests use real Tk windows - made fully transparent, so a test
+    run doesn't flash windows across the screen. They are still there for
+    Windows (mapped, sized, clickable by the tests), so the tests run as
+    before. LABEL_MINER_SHOW_WINDOWS=1 shows them, for debugging a test."""
+    if os.environ.get("LABEL_MINER_SHOW_WINDOWS") == "1":
+        yield
+        return
+    originals = {cls: cls.__init__ for cls in (tk.Tk, tk.Toplevel)}
+
+    def hidden(original):
+        def __init__(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            try:
+                self.wm_attributes("-alpha", 0.0)
+            except tk.TclError:
+                pass
+
+        return __init__
+
+    for cls, original in originals.items():
+        cls.__init__ = hidden(original)
+    yield
+    for cls, original in originals.items():
+        cls.__init__ = original
 
 
 def fixture_photos() -> list[str]:

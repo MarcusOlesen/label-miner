@@ -104,7 +104,17 @@ as a stale result.
 - `test_ui.py` and `test_app.py` (marked `gui`) test the review window's behaviour, and a whole
   batch driven through the main window from photos to Excel.
 
-`tools/run_label_tests.py` runs the same scoring over a larger, private photo set.
+`tools/run_label_tests.py` runs the same scoring over a larger, private photo set. With
+`--labels-only` it checks how the labels are read on every real photo there is, without the
+webshop: `data/labels/` (not in git) holds the batches, their recorded OCR and an answer key.
+Run it after any change to the OCR, the line order or the parsing:
+
+```
+python tools/run_label_tests.py data/labels --labels-only
+```
+
+A new batch goes in as its own folder; `--record-ocr --add-new` then reads it once and adds its
+labels to the answer key, marked `"checked": false` until they have been looked over.
 
 ## Getting started
 
