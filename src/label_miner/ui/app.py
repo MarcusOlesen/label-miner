@@ -458,9 +458,7 @@ class LabelMinerApp:
         )
 
     def _choose_export_folder(self):
-        folder = filedialog.askdirectory(
-            parent=self.root, title="Gem Excel-filen i", mustexist=True
-        )
+        folder = filedialog.askdirectory(parent=self.root, title="Gem Excel-filen i", mustexist=True)
         if folder:
             self.export_folder.set(str(Path(folder)))
             self._settings_changed()

@@ -128,8 +128,8 @@ def test_an_approved_label_ignores_remembered_choices():
 
 
 def test_without_shop_lookup_the_shop_is_never_asked(pipeline_results):
-    """"Slå varer op på hjemmesiden automatisk" off: the label is read as
-    always, with no price, link or suggestions, and no shop warnings."""
+    """With "Slå varer op på hjemmesiden automatisk" off, the label is read
+    as always, with no price, link or suggestions, and no shop warnings."""
 
     class NoShop:
         def get(self, *args, **kwargs):
@@ -137,9 +137,14 @@ def test_without_shop_lookup_the_shop_is_never_asked(pipeline_results):
 
     for name, looked_up in pipeline_results.items():
         record = extract_label(
-            CachedOcrEngine(FIXTURES / "ocr"), FIXTURES / "photos" / name, NoShop(), {}, threading.Lock(),
+            CachedOcrEngine(FIXTURES / "ocr"),
+            FIXTURES / "photos" / name,
+            NoShop(),
+            {},
+            threading.Lock(),
             shop_lookup=False,
         )
         assert record.label.mk_varenummer == looked_up.label.mk_varenummer
         assert record.url == "" and record.candidates == []
-        assert not [w for w in record.warnings if w[0] in ("conflict", "by_name", "by_number", "variant", "not_found", "shop")]
+        shop_warnings = ("conflict", "by_name", "by_number", "variant", "not_found", "shop")
+        assert not [category for category, _ in record.warnings if category in shop_warnings]

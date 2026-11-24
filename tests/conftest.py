@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import threading
@@ -25,10 +26,8 @@ def invisible_windows():
     def hidden(original):
         def __init__(self, *args, **kwargs):
             original(self, *args, **kwargs)
-            try:
+            with contextlib.suppress(tk.TclError):
                 self.wm_attributes("-alpha", 0.0)
-            except tk.TclError:
-                pass
 
         return __init__
 

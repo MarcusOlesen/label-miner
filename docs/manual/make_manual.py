@@ -605,7 +605,11 @@ def build_story(export_rows):
                             "<b>Læs billedet igen</b>, når du har drejet eller beskåret det. Felterne "
                             "bliver læst forfra.",
                         ),
-                        (4, "Under <b>Flere værktøjer</b> er der en skyder, så du kan rette billedet præcist op."),
+                        (
+                            4,
+                            "Under <b>Flere værktøjer</b> er der en skyder, så du kan rette "
+                            "billedet præcist op.",
+                        ),
                         (5, "<b>Spejl</b> og <b>Nulstil billede</b>."),
                         (6, "<b>Tekst læst fra labelen</b> – præcis det, programmet kunne læse."),
                     ],
@@ -823,8 +827,7 @@ def build_story(export_rows):
         TITLE["regler"],
         "regler",
         "Regler",
-        "En label bliver kun godkendt uden dig, når programmet er helt sikker. Ellers "
-        "havner den i Gennemse.",
+        "En label bliver kun godkendt uden dig, når programmet er helt sikker. Ellers havner den i Gennemse.",
     )
     half = (W - GAP) / 2
     s.append(

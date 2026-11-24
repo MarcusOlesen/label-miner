@@ -844,12 +844,7 @@ class ReviewWindow:
         base = self.working_image or self.original_image
         key = (base, self.zoomed, self.zoom_box)
         cached = self.preview_source_key
-        if (
-            self.preview_source is None
-            or cached is None
-            or cached[0] is not base
-            or cached[1:] != key[1:]
-        ):
+        if self.preview_source is None or cached is None or cached[0] is not base or cached[1:] != key[1:]:
             image = self.display_base().copy()
             image.thumbnail((self.PREVIEW_MAX_SIDE, self.PREVIEW_MAX_SIDE), Image.Resampling.LANCZOS)
             self.preview_source = image
